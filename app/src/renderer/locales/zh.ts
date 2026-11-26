@@ -1139,4 +1139,9 @@ export const zh: Record<string, string> = {
   'Attached context': '附加上下文',
   'Research projects': '研究项目',
   'Other projects': '其他项目',
+  'Import into project': '导入到项目',
+  'Use the session’s original folder': '使用会话原来的文件夹',
+  'The session keeps its original working folder and machine. An imported session opens in its existing project.': '会话保留原来的工作目录和机器。已导入的会话会在其现有项目中打开。',
+  'Search title, folder, provider or date': '搜索标题、文件夹、提供方或日期',
+  'Choose a project on the same machine as the session.': '请选择与会话在同一台机器上的项目。',
 };

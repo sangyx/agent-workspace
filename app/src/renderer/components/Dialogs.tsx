@@ -1,5 +1,6 @@
-import {sessionTitle,isApprovalReviewTitle} from '../../shared/presentation';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import {sessionTitle,isApprovalReviewTitle,filterImportCandidates} from '../../shared/presentation';
+import {sessionKey} from '../../shared/session-identity';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { NATIVE_PROVIDERS, type AgentProvider, type ForkPoint, type ModelOption, type NativeProvider, type NativeSessionInfo, type Task, type WorkspaceSnapshot } from '../../shared/types';
 import { call, errorText } from '../api';
 import { setDraftText } from '../drafts';
@@ -245,6 +246,7 @@ export function ImportDialog({ snapshot, onClose, onImported }: { snapshot: Work
   const [provider, setProvider] = useState<'all' | NativeProvider>('all');
   const [importing, setImporting] = useState('');
   const [showAutomated, setShowAutomated] = useState(() => readPref(AUTOMATED_KEY) === '1');
+  const [destination, setDestination] = useState('');
   // Sources: this computer plus the machines turned on in Settings › Remote machines.
   const hosts = snapshot.remoteHosts.map((h) => h.host);
   const [source, setSource] = useState<string>(() => {
@@ -254,7 +256,9 @@ export function ImportDialog({ snapshot, onClose, onImported }: { snapshot: Work
   /** Per source: its sessions once loaded, or why it failed. */
   const [loaded, setLoaded] = useState<Record<string, NativeSessionInfo[] | { error: string }>>({});
   const now = Date.now();
-  const wanted = source === 'all' ? [LOCAL, ...hosts] : [source];
+  const hostKey = hosts.join('\0');
+  const wanted = useMemo(() => source === 'all' ? [LOCAL, ...hosts] : [source], [source, hostKey]);
+  const project = snapshot.projects.find((p) => p.projectId === destination);
 
   useEffect(() => {
     writeSource(source);
@@ -271,25 +275,24 @@ export function ImportDialog({ snapshot, onClose, onImported }: { snapshot: Work
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [source]);
 
-  const lists = wanted.map((src) => loaded[src]);
-  const sessions = lists.flatMap((l) => (Array.isArray(l) ? l : [])).map(s=>({...s,automated:s.automated||isApprovalReviewTitle(s.title),title:sessionTitle(s.title)})).sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
+  // Raw session titles can contain hundreds of KB of injected context. Format once per scan,
+  // not on every search keystroke or unrelated workspace update.
+  const sessions = useMemo(() => wanted.map((src) => loaded[src]).flatMap((l) => (Array.isArray(l) ? l : [])).map(s=>({...s,automated:s.automated||isApprovalReviewTitle(s.title),title:sessionTitle(s.title)})).sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '')), [loaded, wanted]);
   const pending = wanted.filter((src) => !loaded[src]);
   const failed = wanted.flatMap((src) => {
     const l = loaded[src];
     return l && !Array.isArray(l) ? [{ src, error: l.error }] : [];
   });
-  const q = query.trim().toLowerCase();
-  const matching = sessions.filter(
-    (s) => (provider === 'all' || s.provider === provider) && (!q || s.title.toLowerCase().includes(q) || s.cwd.toLowerCase().includes(q) || !!s.host?.toLowerCase().includes(q)),
-  );
+  const matching = filterImportCandidates(sessions, query).filter((s) => provider === 'all' || s.provider === provider);
   // Sessions an agent started inside another task (sub-agents) are rarely ones to continue.
   const automatedCount = matching.filter((s) => s.automated).length;
   const shown = showAutomated ? matching : matching.filter((s) => !s.automated);
   const add = (s: NativeSessionInfo) => {
     if (s.provider === 'mock') return;
-    setImporting(s.nativeSessionId);
+    if (project && project.host !== s.host) return;
+    setImporting(sessionKey(s));
     setError('');
-    call('task:importSession', { provider: s.provider, nativeSessionId: s.nativeSessionId, cwd: s.cwd, host: s.host, title: s.title.slice(0, 500) || s.nativeSessionId })
+    call('task:importSession', { projectId: destination || undefined, provider: s.provider, nativeSessionId: s.nativeSessionId, cwd: s.cwd, host: s.host, title: s.title.slice(0, 500) || s.nativeSessionId })
       .then((t) => {
         onImported(t.taskId);
         onClose();
@@ -301,6 +304,14 @@ export function ImportDialog({ snapshot, onClose, onImported }: { snapshot: Work
   return (
     <Modal title={t('Continue an existing session')} onClose={onClose}>
       <p className="muted small">{t('Continue a saved conversation with its history. Close it in the original app or terminal first.')}</p>
+      <label className="settings-row-inline">
+        <span>{t('Import into project')}</span>
+        <select className="input select" value={destination} onChange={(e) => setDestination(e.target.value)} data-testid="session-project">
+          <option value="">{t('Use the session’s original folder')}</option>
+          {snapshot.projects.map((p) => <option key={p.projectId} value={p.projectId}>{p.name}{p.host ? ` · ${p.host}` : ''}</option>)}
+        </select>
+      </label>
+      <p className="muted small">{t('The session keeps its original working folder and machine. An imported session opens in its existing project.')}</p>
       <div className="row">
         {hosts.length ? (
           <select className="input select" value={source} onChange={(e) => setSource(e.target.value)} title={t('Where the sessions are')} data-testid="session-host">
@@ -313,7 +324,7 @@ export function ImportDialog({ snapshot, onClose, onImported }: { snapshot: Work
             ))}
           </select>
         ) : null}
-        <input className="input grow" autoFocus placeholder={t('Search by title or folder')} value={query} onChange={(e) => setQuery(e.target.value)} data-testid="session-search" />
+        <input className="input grow" autoFocus placeholder={t('Search title, folder, provider or date')} value={query} onChange={(e) => setQuery(e.target.value)} data-testid="session-search" />
         <div className="segmented">
           {(['all', ...NATIVE_PROVIDERS] as const).filter((p) => p !== 'antigravity' || wanted.includes(LOCAL)).map((p) => (
             <button key={p} className={provider === p ? 'on' : ''} onClick={() => setProvider(p)}>
@@ -348,7 +359,7 @@ export function ImportDialog({ snapshot, onClose, onImported }: { snapshot: Work
       {!pending.length && shown.length === 0 ? <div className="muted">{automatedCount ? t('Only sub-agent sessions match.') : t('No sessions found.')}</div> : null}
       <div className="session-list" data-testid="session-list">
         {shown.map((s) => (
-          <div key={s.nativeSessionId} className="session-row" data-testid="session-row">
+          <div key={sessionKey(s)} className="session-row" data-testid="session-row">
             <div className="session-main">
               <div className="session-title">
                 <ProviderTag provider={s.provider} /> <span className="truncate">{s.title}</span>
@@ -371,8 +382,8 @@ export function ImportDialog({ snapshot, onClose, onImported }: { snapshot: Work
                 ) : null}
               </div>
             </div>
-            <button className="btn" disabled={!!importing} onClick={() => add(s)}>
-              {importing === s.nativeSessionId ? t('Importing…') : t('Import')}
+            <button className="btn" disabled={!!importing || !!project && project.host !== s.host} title={project && project.host !== s.host ? t('Choose a project on the same machine as the session.') : undefined} onClick={() => add(s)}>
+              {importing === sessionKey(s) ? t('Importing…') : t('Import')}
             </button>
           </div>
         ))}

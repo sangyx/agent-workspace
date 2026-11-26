@@ -2,6 +2,7 @@ import type { TranscriptItem } from './types';
 import {presentChatMessage,isContextHeading} from '../../../packages/embedded-chat/src/chatPresentation';
 import {importCandidateTitle,isApprovalReviewTitle} from '../../../packages/embedded-chat/src/chatImportPresentation';
 export {isApprovalReviewTitle};
+export {filterImportCandidates} from '../../../packages/embedded-chat/src/chatImportPresentation';
 /** Display envelope only; the native transcript and provider history remain authoritative. */
 export function presentTranscriptItem(item: TranscriptItem): TranscriptItem {
   if(item.role!=='user'||item.contextNotes?.length)return item;

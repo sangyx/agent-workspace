@@ -1,15 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { TranscriptItem, WorkspaceSnapshot } from '../shared/types';
 import { call } from './api';
 import { t } from './i18n';
+import { TranscriptCache } from './transcript-cache';
 
 /** Snapshot-on-start, then push updates from the main process (spec 03: recover from missed events). */
 export function useWorkspace(): WorkspaceSnapshot | null {
   const [snapshot, setSnapshot] = useState<WorkspaceSnapshot | null>(null);
   useEffect(() => {
-    const off = window.amw.onWorkspace(setSnapshot);
-    void call('workspace:snapshot', {}).then(setSnapshot);
-    return off;
+    let pushed = false, alive = true;
+    const off = window.amw.onWorkspace((value) => { pushed = true; setSnapshot(value); });
+    void call('workspace:snapshot', {}).then((value) => { if (alive && !pushed) setSnapshot(value); });
+    return () => { alive = false; off(); };
   }, []);
   return snapshot;
 }
@@ -19,34 +21,19 @@ export function useTranscripts(): {
   transcripts: Record<string, TranscriptItem[]>;
   load: (taskId: string) => void;
 } {
-  const [transcripts, setTranscripts] = useState<Record<string, TranscriptItem[]>>({});
-  const loaded = useRef(new Set<string>());
-  useEffect(
-    () =>
-      window.amw.onTranscript(({ items, resets }) => {
-        // The native history replaced this task's transcript (resume): reload it wholesale.
-        for (const taskId of resets)
-          if (loaded.current.has(taskId))
-            void call('transcript:get', { taskId }).then((list) => setTranscripts((prev) => ({ ...prev, [taskId]: list })));
-        setTranscripts((prev) => {
-          const next = { ...prev };
-          for (const item of items) {
-            if (!loaded.current.has(item.taskId)) continue;
-            const list = [...(next[item.taskId] ?? [])];
-            const i = list.findIndex((x) => x.id === item.id);
-            if (i === -1) list.push(item);
-            else list[i] = item;
-            next[item.taskId] = list;
-          }
-          return next;
-        });
-      }),
-    [],
-  );
+  const [cache] = useState(() => new TranscriptCache((taskId) => call('transcript:get', { taskId })));
+  const [transcripts, setTranscripts] = useState(cache.value);
+  useEffect(() => {
+    return cache.subscribe(setTranscripts);
+  }, [cache]);
+  useEffect(() => {
+    return window.amw.onTranscript(({ items, resets }) => {
+      void cache.update(items, resets).catch((error) => console.error('Could not reload conversation', error));
+    });
+  }, [cache]);
   const load = useCallback((taskId: string) => {
-    loaded.current.add(taskId);
-    void call('transcript:get', { taskId }).then((items) => setTranscripts((prev) => ({ ...prev, [taskId]: items })));
-  }, []);
+    void cache.load(taskId).catch((error) => console.error('Could not load conversation', error));
+  }, [cache]);
   return { transcripts, load };
 }
 

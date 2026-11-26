@@ -36,3 +36,8 @@ it("searches all candidates with case/width normalization, Chinese fragments and
   expect(filterImportCandidates(candidates, "ftq claude")).toEqual([]);
   expect(filterImportCandidates(candidates, "  ")).toBe(candidates);
 });
+it('supports native session folder and SSH host searches without changing the returned records', () => {
+  const session = { title: 'Results', provider: 'codex', cwd: '/work/study', host: 'Lab-Host', updatedAt: '2026-01-02' };
+  expect(filterImportCandidates([session], 'ＣＯＤＥＸ lab-host /work 2026-01')).toEqual([session]);
+  expect(filterImportCandidates([session], 'lab-host wrong-folder')).toEqual([]);
+});

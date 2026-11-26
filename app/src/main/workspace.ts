@@ -1,4 +1,5 @@
 import {presentTranscriptItem} from '../shared/presentation';
+import {sessionKey} from '../shared/session-identity';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
@@ -574,14 +575,15 @@ export class Workspace {
     if (host) return this.addRemoteProject(host, rootPath, name);
     const path = resolve(rootPath);
     if (!existsSync(path) || !statSync(path).isDirectory()) throw new Error(`Not a directory: ${path}`);
-    const root = (await gitRoot(path)) ?? path;
+    const git = await gitRoot(path);
+    const root = git ?? path;
     const existing = this.store.data.projects.find((p) => !p.host && p.rootPath === root);
     if (existing) return existing;
     const project: Project = {
       projectId: `p-${randomUUID().slice(0, 8)}`,
       name: name?.trim() || basename(root),
       rootPath: root,
-      isGitRepo: !!(await gitRoot(root)),
+      isGitRepo: !!git,
       createdAt: now(),
     };
     this.store.data.projects.push(project);
@@ -1367,8 +1369,8 @@ export class Workspace {
    * them twice. Only agents still here: a removed agent's session can be brought back.
    */
   private attachedSessionIds(): Set<string> {
-    const here = new Set([...this.store.data.tasks.map((t) => t.taskId), ...(this.store.data.mainAgent ? [this.store.data.mainAgent.taskId] : [])]);
-    return new Set(this.store.data.sessions.filter((s) => here.has(s.taskId) && s.nativeSessionId).map((s) => s.nativeSessionId));
+    const here = new Map([...this.store.data.tasks, ...(this.store.data.mainAgent ? [this.store.data.mainAgent] : [])].map((task) => [task.taskId, task]));
+    return new Set(this.store.data.sessions.filter((s) => here.has(s.taskId) && s.nativeSessionId).map((s) => sessionKey({ ...s, host: here.get(s.taskId)!.host })));
   }
 
   async discoverSessions(projectId: string, provider: NativeProvider): Promise<NativeSessionInfo[]> {
@@ -1378,7 +1380,7 @@ export class Workspace {
     if (project.host && !adapter.remote) return [];
     const known = this.attachedSessionIds();
     const found = await adapter.discoverSessions({ cwd: project.rootPath, host: project.host });
-    return found.filter((s) => !known.has(s.nativeSessionId));
+    return found.filter((s) => !known.has(sessionKey({ ...s, host: project.host })));
   }
 
   /**
@@ -1544,7 +1546,7 @@ export class Workspace {
     const lists = results.map((r) => (r.status === 'fulfilled' ? r.value : []));
     return lists
       .flat()
-      .filter((s) => s.cwd && !known.has(s.nativeSessionId))
+      .filter((s) => s.cwd && !known.has(sessionKey({ ...s, host })))
       .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
   }
 
@@ -1571,23 +1573,31 @@ export class Workspace {
     );
     return lists
       .flat()
-      .filter((s) => s.cwd && !known.has(s.nativeSessionId) && !own.some((dir) => resolve(s.cwd).startsWith(dir)))
+      .filter((s) => s.cwd && !known.has(sessionKey(s)) && !own.some((dir) => resolve(s.cwd).startsWith(dir)))
       .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
   }
 
   /** Adopts a provider session created outside the app (historical resume, not live attach). */
   async importSession(args: { projectId?: string; provider: NativeProvider; nativeSessionId: string; cwd: string; host?: string; title: string }): Promise<Task> {
-    if (args.projectId) args = { ...args, host: this.project(args.projectId).host };
+    // Import is adoption, not a fork. Opening the same native session twice must not
+    // create competing agents, lose its project assignment, or unarchive it.
+    const existing = () => this.store.data.tasks.find((task) => task.provider === args.provider && task.host === args.host && this.store.data.sessions.some((s) => s.taskId === task.taskId && s.provider === args.provider && s.nativeSessionId === args.nativeSessionId));
+    const found = existing();
+    if (found) return found;
+    if (args.projectId && this.project(args.projectId).host !== args.host)
+      throw new Error('Choose a project on the same machine as the session.');
     if (args.host) this.requireOnHost(args.provider, args.host);
     if (!args.projectId && args.host) {
-      const inside = this.store.data.projects.find((p) => p.host === args.host && (args.cwd === p.rootPath || args.cwd.startsWith(p.rootPath + '/')));
+      const inside = this.store.data.projects.filter((p) => p.host === args.host && (args.cwd === p.rootPath || args.cwd.startsWith(p.rootPath.replace(/\/+$/, '') + '/'))).sort((a, b) => b.rootPath.length - a.rootPath.length)[0];
       args = { ...args, projectId: (inside ?? (await this.addProject(args.cwd, undefined, args.host))).projectId };
     } else if (!args.projectId) {
       // From the machine-wide list: the session's folder becomes (or joins) a project.
       if (!existsSync(args.cwd)) throw new Error(`The session's folder no longer exists: ${args.cwd}`);
-      const inside = this.store.data.projects.find((p) => !p.host && (args.cwd === p.rootPath || args.cwd.startsWith(p.rootPath + sep)));
+      const inside = this.store.data.projects.filter((p) => !p.host && (args.cwd === p.rootPath || args.cwd.startsWith(p.rootPath.replace(/[\\/]+$/, '') + sep))).sort((a, b) => b.rootPath.length - a.rootPath.length)[0];
       args = { ...args, projectId: (inside ?? (await this.addProject(args.cwd))).projectId };
     }
+    const concurrent = existing();
+    if (concurrent) return concurrent;
     const ids = this.newTaskIds();
     const title = clip(args.title, 120);
     const task = this.addTask(ids, {

@@ -1,5 +1,3 @@
-import type { ManualChatImportCandidate } from "./workspaceChat";
-
 const reviewPrefix =
   "The following is the Codex agent history whose request action you are assessing.";
 
@@ -15,8 +13,8 @@ export function importCandidateTitle(title: string | undefined) {
   return chars.length > 180 ? chars.slice(0, 179).join("") + "…" : compact;
 }
 
-export function filterImportCandidates(
-  candidates: ManualChatImportCandidate[],
+export function filterImportCandidates<T extends { title: string; provider: string; updatedAt?: string; cwd?: string; host?: string }>(
+  candidates: T[],
   query: string,
 ) {
   const normalize = (value: string) => value.normalize("NFKC").toLowerCase();
@@ -24,7 +22,7 @@ export function filterImportCandidates(
   if (!terms.length) return candidates;
   return candidates.filter((candidate) => {
     const haystack = normalize(
-      [candidate.title, candidate.provider, candidate.updatedAt].join(" "),
+      [candidate.title, candidate.provider, candidate.updatedAt, candidate.cwd, candidate.host].join(" "),
     );
     return terms.every((term) => haystack.includes(term));
   });
