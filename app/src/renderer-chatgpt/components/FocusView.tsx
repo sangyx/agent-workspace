@@ -141,11 +141,11 @@ export function FocusView({ snapshot, task, transcript, now, onOpen, onVoiceSlot
     const parent = snapshot.tasks.find((x) => x.taskId === from.taskId);
     return { taskId: from.taskId, alias: parent?.alias ?? from.alias, name: parent?.name ?? from.alias };
   }, [task.forkedFrom, snapshot.tasks]);
-  const [showMap, setShowMap] = useState(false);
+  const [showMap, setShowMap] = useState(true);
   const [chatControls, setChatControls] = useState(false);
   const [bodyW, setBodyW] = useState(0);
   useEffect(() => {
-    setShowMap(false);
+    setShowMap(true);
     setChatControls(false);
   }, [task.taskId]);
   const [currentTask, setCurrentTask] = useState<string | null>(null);
