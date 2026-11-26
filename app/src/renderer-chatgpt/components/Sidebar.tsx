@@ -119,6 +119,7 @@ export function Sidebar({
       live.push({ project, members: [], idle: [], counts: { waiting: 0, running: 0, failed: 0 }, active: true });
     }
   }
+  const hasResearch=snapshot.projects.some(p=>p.kind==='research');
   const [showProjects, setShowProjects] = useState(false);
   const visibleProjects = showProjects ? live : live.filter((team, i) => i < 6 || team.members.some((task) => task.taskId === focusId) || team.idle.some((task) => task.taskId === focusId) || editingProject(team.project.projectId));
   const archived = teamList.filter((team) => !team.active);
@@ -348,7 +349,7 @@ export function Sidebar({
         {snapshot.projects.length === 0 ? <div className="muted small pad-x">{tr('No projects yet.')}</div> : null}
         {(['research','chat'] as const).map(kind=>{
           const teams=visibleProjects.filter(team=>(team.project.kind||'chat')===kind);
-          return teams.length ? <div key={kind} data-project-kind={kind}><div className="sidebar-section"><span>{tr(kind==='research'?'Research projects':'Other projects')}</span></div>{teams.map(renderTeam)}</div>:null;
+          return teams.length ? <div key={kind} data-project-kind={kind}>{hasResearch?<div className="sidebar-section"><span>{tr(kind==='research'?'Research projects':'Other projects')}</span></div>:null}{teams.map(renderTeam)}</div>:null;
         })}
         {live.length > 6 ? <button className="team-idle" aria-expanded={showProjects} onClick={() => setShowProjects(!showProjects)}>{tr(showProjects ? 'Show less' : 'Show more')}</button> : null}
         {archived.length ? (
