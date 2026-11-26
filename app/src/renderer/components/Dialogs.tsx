@@ -1,3 +1,4 @@
+import {sessionTitle,isApprovalReviewTitle} from '../../shared/presentation';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { NATIVE_PROVIDERS, type AgentProvider, type ForkPoint, type ModelOption, type NativeProvider, type NativeSessionInfo, type Task, type WorkspaceSnapshot } from '../../shared/types';
 import { call, errorText } from '../api';
@@ -271,7 +272,7 @@ export function ImportDialog({ snapshot, onClose, onImported }: { snapshot: Work
   }, [source]);
 
   const lists = wanted.map((src) => loaded[src]);
-  const sessions = lists.flatMap((l) => (Array.isArray(l) ? l : [])).sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
+  const sessions = lists.flatMap((l) => (Array.isArray(l) ? l : [])).map(s=>({...s,automated:s.automated||isApprovalReviewTitle(s.title),title:sessionTitle(s.title)})).sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
   const pending = wanted.filter((src) => !loaded[src]);
   const failed = wanted.flatMap((src) => {
     const l = loaded[src];

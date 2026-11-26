@@ -105,7 +105,7 @@ export function needsYou(tasks: Task[], open: AttentionItem[]): Task[] {
 }
 
 export interface Team {
-  project: Pick<Project, 'projectId' | 'name'>;
+  project: Pick<Project, 'projectId' | 'name' | 'kind'>;
   /** Members to show: working, waiting, or touched within IDLE_AFTER_MS; most urgent first. */
   members: Task[];
   /** Members folded into "N idle". */
@@ -126,7 +126,7 @@ function leadKey(t: Task, open: AttentionItem[]): { g: Group; at: number } {
  * first, then teams with someone working (the one that started first on top), then the rest, teams
  * whose members have all gone idle (folded) last.
  */
-export function teams(tasks: Task[], projects: Array<Pick<Project, 'projectId' | 'name'>>, open: AttentionItem[], now: number, idleAfterMs = IDLE_AFTER_MS): Team[] {
+export function teams(tasks: Task[], projects: Array<Pick<Project, 'projectId' | 'name' | 'kind'>>, open: AttentionItem[], now: number, idleAfterMs = IDLE_AFTER_MS): Team[] {
   const out: Array<Team & { lead: { g: Group; at: number } }> = [];
   for (const project of projects) {
     const all = rank(

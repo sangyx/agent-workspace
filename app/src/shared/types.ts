@@ -22,6 +22,10 @@ export type AttentionState = 'open' | 'resolved' | 'dismissed' | 'expired';
 export type IntegrationMode = 'managed' | 'resumed' | 'external_readonly' | 'live_attached';
 
 export interface Project {
+  /** Optional host catalog identity and category; native-only folders remain ordinary projects. */
+  externalId?: string;
+  externalName?: string;
+  kind?: "research" | "chat";
   projectId: string;
   name: string;
   rootPath: string;
@@ -268,6 +272,8 @@ export interface ImageRef {
 }
 
 export interface TranscriptItem {
+  /** Original injected prefix, folded by the UI. Raw provider/store text remains unchanged. */
+  contextNotes?: Array<{kind:"memory"|"history";text:string}>;
   /** Stable id (provider item id where available) used for upsert / dedup. */
   id: string;
   taskId: string;

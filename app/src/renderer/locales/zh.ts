@@ -1136,4 +1136,7 @@ export const zh: Record<string, string> = {
   'A project name cannot be empty.': '项目名称不能为空。',
   'Uses coding agents signed in on this computer; usage counts against the corresponding account.': '使用已在此电脑登录的编程代理；用量计入相应账户。',
   'Uses the coding agents already signed in on this computer. The app never reads their credentials.': '使用已在此电脑登录的编程代理。应用不会读取其登录凭据。',
+  'Attached context': '附加上下文',
+  'Research projects': '研究项目',
+  'Other projects': '其他项目',
 };

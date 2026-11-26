@@ -1,3 +1,4 @@
+import {presentTranscriptItem} from './presentation';
 import type { Task, TranscriptItem } from './types';
 
 // A session's history as tasks, not messages: a task is a run of consecutive turns (a user message and
@@ -109,7 +110,7 @@ interface Turn {
 export function turnsOf(items: TranscriptItem[]): Turn[] {
   const turns: Turn[] = [];
   for (const item of items) {
-    if (item.role === 'user') turns.push({ user: item, items: [item] });
+    if (item.role === 'user') turns.push({ user: presentTranscriptItem(item), items: [item] });
     else turns.at(-1)?.items.push(item);
   }
   return turns;

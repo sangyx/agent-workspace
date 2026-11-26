@@ -137,7 +137,7 @@ export function Sidebar({
               {editingProject(team.project.projectId) ? (
                 <div className="team-head editing" data-testid="team-head">
                   <span className="team-chevron" aria-hidden>
-                    <Icon name="folder" size={16} />
+                    <Icon name={team.project.kind==='research' ? 'research-folder' : 'folder'} size={16} />
                   </span>
                   {projectNameEdit(team)}
                 </div>
@@ -152,7 +152,7 @@ export function Sidebar({
                   if (m) menu.open(m);
                 }} aria-expanded={open_} data-testid="team-head">
                 <span className="team-chevron" aria-hidden>
-                  <Icon name="folder" size={16} />
+                  <Icon name={team.project.kind==='research' ? 'research-folder' : 'folder'} size={16} />
                 </span>
                 <span className="team-name truncate">{team.project.name}</span>
               </button>
@@ -346,7 +346,10 @@ export function Sidebar({
       {projectError ? <div className="error-text pad-x" role="alert">{projectError}</div> : null}
       <nav className="agent-list" aria-label={tr('Projects')} onScroll={showScrollbarAWhile} data-testid="agent-list">
         {snapshot.projects.length === 0 ? <div className="muted small pad-x">{tr('No projects yet.')}</div> : null}
-        {visibleProjects.map(renderTeam)}
+        {(['research','chat'] as const).map(kind=>{
+          const teams=visibleProjects.filter(team=>(team.project.kind||'chat')===kind);
+          return teams.length ? <div key={kind} data-project-kind={kind}><div className="sidebar-section"><span>{tr(kind==='research'?'Research projects':'Other projects')}</span></div>{teams.map(renderTeam)}</div>:null;
+        })}
         {live.length > 6 ? <button className="team-idle" aria-expanded={showProjects} onClick={() => setShowProjects(!showProjects)}>{tr(showProjects ? 'Show less' : 'Show more')}</button> : null}
         {archived.length ? (
           <div className="team-archive" data-testid="team-archive">

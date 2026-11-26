@@ -154,6 +154,7 @@ const ICONS = {
   power: 'M12 3v8 M6.3 6.3a8 8 0 1 0 11.4 0',
   branch: 'M6 3v12 M18 9a3 3 0 1 0 0-.01 M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z M18 9a9 9 0 0 1-9 9',
   subtasks: 'M6 4v14a2 2 0 0 0 2 2h10 M6 11h12 M14 7l4 4-4 4',
+  'research-folder': 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z M7 10h3v3H7z M13 14h3v2h-3z M10 12h4v2',
   folder: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z',
   check: 'M5 12l5 5 9-10',
   x: 'M6 6l12 12 M18 6L6 18',

@@ -1,3 +1,4 @@
+import {presentTranscriptItem} from '../shared/presentation';
 import { execFileSync } from "node:child_process";
 import {
   existsSync,
@@ -101,6 +102,7 @@ export interface ElectronWorkspaceHostOptions {
     input: unknown,
     workspace: Workspace,
   ) => void | Promise<void>;
+  afterInvoke?: (channel:string,input:unknown,result:unknown,workspace:Workspace)=>boolean|void|Promise<boolean|void>;
   workspaceOptions?: Partial<ConstructorParameters<typeof Workspace>[0]>;
 }
 export function createElectronWorkspaceHost(
@@ -637,9 +639,11 @@ export function createElectronWorkspaceHost(
           );
         try {
           await options.beforeInvoke?.(channel, parsed.data, workspace);
-          return await (handlers[channel] as (i: unknown) => unknown)(
-            parsed.data,
-          );
+          const result=await (handlers[channel] as (i: unknown) => unknown)(parsed.data);
+          if(await options.afterInvoke?.(channel,parsed.data,result,workspace)) {
+            workspace.store.save(); options.sender()?.send(EVENT_WORKSPACE,workspace.snapshot());
+          }
+          return result;
         } catch (error) {
           log("ipc error", channel, error);
           throw error instanceof Error ? error : new Error(String(error));
@@ -696,7 +700,7 @@ export function createElectronWorkspaceHost(
       if (transcriptTimer) return;
       transcriptTimer = setTimeout(() => {
         transcriptTimer = undefined;
-        const items = [...pending.values()];
+        const items = [...pending.values()].map(presentTranscriptItem);
         pending.clear();
         const reset = [...resets];
         resets.clear();
@@ -729,7 +733,11 @@ export function createElectronWorkspaceHost(
           `Invalid input for ${channel}: ${parsed.error.issues[0]?.message ?? ""}`,
         );
       await options.beforeInvoke?.(channel, parsed.data, workspace);
-      return (handlers[key] as (input: unknown) => unknown)(parsed.data);
+      const result=await (handlers[key] as (input: unknown) => unknown)(parsed.data);
+      if(await options.afterInvoke?.(channel,parsed.data,result,workspace)) {
+            workspace.store.save(); options.sender()?.send(EVENT_WORKSPACE,workspace.snapshot());
+          }
+      return result;
     },
     async shutdown() {
       await workspace.shutdown();

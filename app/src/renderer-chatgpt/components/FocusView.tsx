@@ -1,3 +1,5 @@
+import {presentTranscriptItem} from '../../shared/presentation';
+import {ContextNotes} from '../../renderer/ContextNotes';
 import { Fragment, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { SideSlot } from '../side-slot';
@@ -902,7 +904,7 @@ const Transcript = memo(function Transcript({ items, main, task, snapshot }: { i
     if (el.firstElementChild) ro.observe(el.firstElementChild);
     return () => ro.disconnect();
   }, []);
-  const shown = items.filter((i) => i.tool?.name !== 'ToolSearch');
+  const shown = items.filter((i) => i.tool?.name !== 'ToolSearch').map(presentTranscriptItem);
   const order = new Map(shown.map((x, n) => [x.id, n]));
   const turns = splitTurns(shown);
   const renderEntry = (entry: TranscriptItem | TranscriptItem[] | { notices: TranscriptItem[] }) => {
@@ -964,6 +966,7 @@ const Transcript = memo(function Transcript({ items, main, task, snapshot }: { i
                   : undefined
               }
             >
+              {item.role === 'user' && item.contextNotes?.length ? <ContextNotes notes={item.contextNotes}/> : null}
               {item.role === 'user' ? <>
                   {item.delivery === 'steer' ? <span className="delivery-tag">{t('added mid-turn')}</span> : null}
                   {item.delivery === 'interrupt' ? <span className="delivery-tag interrupt">{t('stopped the turn')}</span> : null}

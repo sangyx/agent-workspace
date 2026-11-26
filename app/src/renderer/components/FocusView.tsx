@@ -1,3 +1,5 @@
+import {presentTranscriptItem} from '../../shared/presentation';
+import {ContextNotes} from '../../renderer/ContextNotes';
 import { Fragment, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { SideSlot } from '../side-slot';
@@ -917,7 +919,7 @@ const Transcript = memo(function Transcript({ items, main, task, snapshot }: { i
     if (el.firstElementChild) ro.observe(el.firstElementChild);
     return () => ro.disconnect();
   }, []);
-  const shown = items.filter((i) => i.tool?.name !== 'ToolSearch');
+  const shown = items.filter((i) => i.tool?.name !== 'ToolSearch').map(presentTranscriptItem);
   const order = new Map(shown.map((x, n) => [x.id, n]));
   const turns = splitTurns(shown);
   const renderEntry = (entry: TranscriptItem | TranscriptItem[] | { notices: TranscriptItem[] }) => {
@@ -987,6 +989,7 @@ const Transcript = memo(function Transcript({ items, main, task, snapshot }: { i
                   {/* What the user said themselves can become memory (not what the main agent relayed). */}
                   {item.via !== 'main' ? <RememberButton onClick={() => setRemember(item.id)} /> : null}
                 </div> : null}
+              {item.role === 'user' && item.contextNotes?.length ? <ContextNotes notes={item.contextNotes}/> : null}
               {item.role === 'user' && item.images?.length ? <MessageImages images={item.images} /> : null}
               {item.role === 'user' && !item.text.trim() && item.images?.length ? null : item.role === 'system' && item.memoryUpdate?.length ? (
                 <details className="msg-system memory-sent" data-testid="memory-sent">

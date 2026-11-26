@@ -1,3 +1,4 @@
+import {presentTranscriptItem} from '../shared/presentation';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
@@ -564,7 +565,7 @@ export class Workspace {
   }
 
   transcript(taskId: string): TranscriptItem[] {
-    return this.store.transcript(taskId);
+    return this.store.transcript(taskId).map(presentTranscriptItem);
   }
 
   // ---------------------------------------------------------------- projects
