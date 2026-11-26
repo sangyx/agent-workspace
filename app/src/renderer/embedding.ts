@@ -29,7 +29,9 @@ export function useWorkspaceEmbedding({
   settingsOpen: boolean;
   onCommand: (c: WorkspaceHostCommand) => void;
 }) {
-  useEffect(() => window.amwHost?.onCommand(onCommand), [onCommand]);
+  useEffect(() => {
+    return window.amwHost?.onCommand(onCommand);
+  }, [onCommand]);
   useEffect(() => {
     window.amwHost?.notify({
       page: settingsOpen ? "settings" : focusId ? "chat" : "overview",
