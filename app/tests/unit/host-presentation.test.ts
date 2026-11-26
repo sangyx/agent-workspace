@@ -1,6 +1,6 @@
 import {it,expect} from 'vitest';
 import {presentTranscriptItem,sessionTitle,isApprovalReviewTitle} from '../../src/shared/presentation';
-import {turnsOf} from '../../src/shared/session-map';
+import {turnsOf,sessionMap} from '../../src/shared/session-map';
 import {attachChatHistory,originalChatText} from '../../../packages/embedded-chat/src/chatPresentation';
 it('folds nested continuation and large memory envelopes without changing native text or IDs',()=>{
  const request='What should we run next?';
@@ -12,6 +12,7 @@ it('folds nested continuation and large memory envelopes without changing native
  expect(originalChatText({...shown,at:'now'} as any)).toBe(raw);expect(item.text).toBe(raw);
  expect(presentTranscriptItem(shown)).toBe(shown);expect(turnsOf([item])[0].user.text).toBe(request);
  expect(sessionTitle(raw)).toBe(request);
+ expect(sessionMap([item],[],{turns:1,tasks:[{start:0,title:raw.slice(0,80)}]})[0].title).toBe(request);
 });
 it('keeps legitimate user code and quoted memory text visible and bounds import labels',()=>{
  const code='Explain this JSON: '+JSON.stringify({nodes:['value'.repeat(400)]});

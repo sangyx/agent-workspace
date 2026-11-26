@@ -1,5 +1,5 @@
 import type { TranscriptItem } from './types';
-import {presentChatMessage} from '../../../packages/embedded-chat/src/chatPresentation';
+import {presentChatMessage,isContextHeading} from '../../../packages/embedded-chat/src/chatPresentation';
 import {importCandidateTitle,isApprovalReviewTitle} from '../../../packages/embedded-chat/src/chatImportPresentation';
 export {isApprovalReviewTitle};
 /** Display envelope only; the native transcript and provider history remain authoritative. */
@@ -12,4 +12,8 @@ export function presentTranscriptItem(item: TranscriptItem): TranscriptItem {
 export function sessionTitle(title: string, fallback='Saved conversation') {
   const shown=presentChatMessage({id:'title',role:'user',text:title||'',at:''});
   return importCandidateTitle(shown.contextNotes?.length ? shown.text : title) || fallback;
+}
+
+export function isInternalTitle(title: string) {
+ return isContextHeading(title)||title.startsWith('The following is the Codex agent history whose request action');
 }

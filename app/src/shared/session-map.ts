@@ -1,4 +1,4 @@
-import {presentTranscriptItem} from './presentation';
+import {presentTranscriptItem,isInternalTitle} from './presentation';
 import type { Task, TranscriptItem } from './types';
 
 // A session's history as tasks, not messages: a task is a run of consecutive turns (a user message and
@@ -174,7 +174,7 @@ export function sessionMap(items: TranscriptItem[], forks: Pick<Task, 'taskId' |
     if (k >= 0 || !tasks.length)
       tasks.push({
         startItemId: turn.user.id,
-        title: g?.title || clip(turn.user.text, 70) || '…',
+        title: (g?.title && !isInternalTitle(g.title) ? g.title : '') || clip(turn.user.text, 70) || '…',
         outcome: g?.outcome,
         status: g?.status,
         turnIds: [],
