@@ -1,0 +1,464 @@
+import { useContext, useState, type MouseEvent } from 'react';
+import { openableKind, previewKind } from '../../shared/preview';
+import { diffStat, type FileDiff, type PlanEntry, type PlanInfo, type ToolContent, type ToolKind } from '../../shared/content';
+import type { TranscriptItem } from '../../shared/types';
+import { Icon, StatusIcon, type IconName } from './bits';
+import { PreviewContext } from './filePaths';
+import { Markdown } from './Markdown';
+import { t, t as tr } from '../i18n';
+
+// One renderer per normalized content type. Claude and Codex both arrive here in
+// the same shape (src/shared/content.ts), so nothing below knows the provider.
+
+export const KIND_ICON: Record<ToolKind, IconName> = {
+  read: 'file',
+  edit: 'pencil',
+  delete: 'trash',
+  move: 'file',
+  search: 'search',
+  execute: 'terminal',
+  think: 'list',
+  fetch: 'globe',
+  switch_mode: 'bulb',
+  other: 'tool',
+};
+
+export function DiffStat({ added, removed }: { added: number; removed: number }) {
+  return (
+    <span className="diffstat mono">
+      {added ? <span className="add">+{added}</span> : null}
+      {removed ? <span className="del">−{removed}</span> : null}
+    </span>
+  );
+}
+
+const OP_LABEL: Record<FileDiff['operation'], string> = { add: 'new', delete: 'deleted', modify: '', move: 'moved' };
+
+/** Unified diff with real line numbers (or none for snippet diffs). */
+export function DiffView({ diff, maxLines }: { diff: FileDiff; maxLines?: number }) {
+  const [all, setAll] = useState(false);
+  const rows: Array<{ kind: 'hunk' | 'add' | 'del' | 'ctx'; text: string; o?: number; n?: number }> = [];
+  for (const h of diff.hunks) {
+    let o = h.oldStart;
+    let n = h.newStart;
+    if (!diff.snippet && diff.hunks.length > 1) rows.push({ kind: 'hunk', text: `@@ -${h.oldStart},${h.oldLines} +${h.newStart},${h.newLines} @@` });
+    for (const line of h.lines) {
+      const sign = line[0];
+      const text = line.slice(1);
+      if (sign === '+') rows.push({ kind: 'add', text, n: diff.snippet ? undefined : n++ });
+      else if (sign === '-') rows.push({ kind: 'del', text, o: diff.snippet ? undefined : o++ });
+      else rows.push({ kind: 'ctx', text, o: diff.snippet ? undefined : o++, n: diff.snippet ? undefined : n++ });
+    }
+  }
+  const limit = maxLines && !all ? maxLines : Infinity;
+  const shown = rows.slice(0, limit);
+  return (
+    <div className={`diff phase-${diff.phase}`} data-testid="diff">
+      <div className="diff-head">
+        <Icon name={diff.operation === 'delete' ? 'trash' : 'file'} size={12} />
+        <span className="diff-path mono truncate" title={diff.oldPath ? `${diff.oldPath} → ${diff.path}` : diff.path}>
+          {diff.oldPath ? `${diff.oldPath} → ` : ''}
+          {diff.path}
+        </span>
+        {OP_LABEL[diff.operation] ? <span className="tag">{t(OP_LABEL[diff.operation])}</span> : null}
+        {diff.phase === 'proposed' ? <span className="tag tag-proposed">{t('proposed')}</span> : null}
+        <DiffStat added={diff.added} removed={diff.removed} />
+      </div>
+      {rows.length ? (
+        <table className="diff-body mono">
+          <tbody>
+            {shown.map((r, i) =>
+              r.kind === 'hunk' ? (
+                <tr key={i} className="diff-hunk">
+                  <td colSpan={4}>{r.text}</td>
+                </tr>
+              ) : (
+                <tr key={i} className={`diff-${r.kind}`}>
+                  {!diff.snippet ? <td className="ln">{r.o ?? ''}</td> : null}
+                  {!diff.snippet ? <td className="ln">{r.n ?? ''}</td> : null}
+                  <td className="sign">{r.kind === 'add' ? '+' : r.kind === 'del' ? '−' : ' '}</td>
+                  <td className="code">{r.text || ' '}</td>
+                </tr>
+              ),
+            )}
+          </tbody>
+        </table>
+      ) : (
+        <div className="muted small pad-x">{t('No line changes.')}</div>
+      )}
+      {rows.length > shown.length ? (
+        <button className="diff-more" onClick={() => setAll(true)}>
+          {t('Show all {n} lines', { n: rows.length })}
+        </button>
+      ) : null}
+      {diff.truncated ? <div className="muted small pad-x">{t('Diff truncated; full totals shown above.')}</div> : null}
+    </div>
+  );
+}
+
+export function TerminalView({ t, compact }: { t: Extract<ToolContent, { type: 'terminal' }>; compact?: boolean }) {
+  const failed = t.exitCode !== undefined && t.exitCode !== 0;
+  return (
+    <div className={`terminal${failed ? ' failed' : ''}`} data-testid="terminal">
+      <div className="terminal-cmd mono">
+        <span className="prompt">$</span> {t.command}
+      </div>
+      {t.output && !compact ? <pre className="terminal-out">{t.output}</pre> : null}
+      {t.exitCode !== undefined || t.interrupted || t.background || t.cwd ? (
+        <div className="terminal-foot">
+          {t.cwd ? <span className="truncate">{tr('in {cwd}', { cwd: t.cwd })}</span> : null}
+          {t.background ? <span>{tr('running in background')}</span> : null}
+          {t.interrupted ? <span>{tr('interrupted')}</span> : null}
+          {t.exitCode !== undefined ? <span className={failed ? 'bad' : 'good'}>{tr('exit {code}', { code: t.exitCode })}</span> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SearchView({ s }: { s: Extract<ToolContent, { type: 'search' }> }) {
+  const shown = s.files.slice(0, 8);
+  return (
+    <div className="search-result">
+      <div className="small muted">
+        {t((s.total ?? s.files.length) === 1 ? '{n} file' : '{n} files', { n: s.total ?? s.files.length })}
+        {s.truncated ? ` ${t('(truncated)')}` : ''}
+      </div>
+      <ul className="file-list mono">
+        {shown.map((f) => (
+          <li key={f} className="truncate">
+            {f}
+          </li>
+        ))}
+        {s.files.length > shown.length ? <li className="muted">{t('+{n} more', { n: s.files.length - shown.length })}</li> : null}
+      </ul>
+      {s.matches ? <pre>{s.matches}</pre> : null}
+    </div>
+  );
+}
+
+function FetchView({ f }: { f: Extract<ToolContent, { type: 'fetch' }> }) {
+  return (
+    <div className="fetch-result">
+      {f.url ? (
+        <a className="link mono small" href={f.url} target="_blank" rel="noreferrer">
+          {f.url}
+        </a>
+      ) : null}
+      {f.status ? <span className="tag">{f.status}</span> : null}
+      {f.results?.length ? (
+        <ul className="link-list">
+          {f.results.map((r) => (
+            <li key={r.url}>
+              <a className="link" href={r.url} target="_blank" rel="noreferrer">
+                {r.title || r.url}
+              </a>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {f.summary ? <Markdown text={f.summary} /> : null}
+    </div>
+  );
+}
+
+export function ToolContentView({ content, compact }: { content: ToolContent[]; compact?: boolean }) {
+  return (
+    <div className="tool-content">
+      {content.map((c, i) => {
+        if (c.type === 'diff') return <DiffView key={i} diff={c.diff} maxLines={compact ? 10 : 60} />;
+        if (c.type === 'terminal') return <TerminalView key={i} t={c} compact={compact && !c.output} />;
+        if (c.type === 'search') return <SearchView key={i} s={c} />;
+        if (c.type === 'fetch') return <FetchView key={i} f={c} />;
+        return c.format === 'markdown' ? <Markdown key={i} text={c.text} /> : <pre key={i}>{c.text}</pre>;
+      })}
+    </div>
+  );
+}
+
+
+const STATUS_TEXT: Partial<Record<NonNullable<TranscriptItem['toolStatus']>, string>> = {
+  awaiting_approval: 'waiting for your approval',
+  declined: 'declined',
+  failed: 'failed',
+  interrupted: 'interrupted',
+};
+
+/** Files this tool call created or changed that the preview column can show. */
+export function touchedPaths(item: TranscriptItem): string[] {
+  const tool = item.tool;
+  if (!tool) return [];
+  const paths = [
+    ...tool.content.flatMap((c) => (c.type === 'diff' && c.diff.operation !== 'delete' ? [c.diff.path] : [])),
+    ...(tool.kind === 'edit' || tool.kind === 'move' ? tool.locations.map((l) => l.path) : []),
+  ];
+  return [...new Set(paths)].filter((p) => previewKind(p));
+}
+
+/** Set by the Focus view; rows elsewhere (cards) offer no file actions. */
+export { PreviewContext } from './filePaths';
+
+function FileActions({ paths }: { paths: string[] }) {
+  const ctx = useContext(PreviewContext);
+  if (!ctx || !paths.length) return null;
+  // Inside <summary>: keep a click from also folding the row.
+  const act = (fn: () => void) => (e: MouseEvent) => {
+    e.preventDefault();
+    fn();
+  };
+  return (
+    <span className="file-actions">
+      {paths.map((p) => (
+        <span key={p} className="file-action" title={p}>
+          <button className="link small" data-testid="preview-file" onClick={act(() => ctx.preview(p))}>
+            {paths.length > 1 ? t('Preview {name}', { name: p.split('/').pop() ?? p }) : t('Preview')}
+          </button>
+          {ctx.openExternal && openableKind(p) ? (
+            <button className="link small" title={t('Open in default app')} aria-label={t('Open in default app')} onClick={act(() => ctx.openExternal!(p))}>
+              <Icon name="external" size={11} />
+            </button>
+          ) : null}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** One tool call in the transcript: a title row that expands into its content. */
+export function ToolCallRow({ item }: { item: TranscriptItem }) {
+  const tool = item.tool;
+  const status = item.toolStatus ?? 'completed';
+  const content = tool?.content ?? [];
+  const diffs = content.flatMap((c) => (c.type === 'diff' ? [c.diff] : []));
+  const stat = diffs.length ? diffStat(diffs) : undefined;
+  const hasOutput = content.some((c) => (c.type === 'terminal' ? !!c.output : true));
+  // Folded by default (the row says what happened: a diff's line counts, a failure's mark); open when it
+  // is yours (a command you ran with `!`) or waits on you.
+  const openByDefault = !!tool?.byUser || status === 'awaiting_approval';
+  const body = content.length ? <ToolContentView content={content} /> : item.text ? <pre>{item.text}</pre> : null;
+  return (
+    <details className={`msg tool tool-${status} kind-${tool?.kind ?? 'other'}`} open={openByDefault} data-testid="tool-call" data-kind={tool?.kind ?? 'other'}>
+      <summary>
+        <span className="tool-status">
+          <StatusIcon status={status} />
+        </span>
+        <Icon name={KIND_ICON[tool?.kind ?? 'other']} size={13} />
+        <span className={`tool-label truncate${/^(\$ |! |Read |Edit |Write |Search |Find |Fetch )/.test(tool?.title ?? '') ? '' : ' prose'}`}>
+          {tool?.byUser ? <span className="tool-by-user">{t('You ran')}</span> : null}
+          {tool?.title || item.toolLabel || t('Tool')}
+        </span>
+        {stat ? <DiffStat added={stat.added} removed={stat.removed} /> : null}
+        {STATUS_TEXT[status] ? <span className={`tool-state state-${status}`}>{t(STATUS_TEXT[status]!)}</span> : null}
+        {!openByDefault && (hasOutput || item.text) ? <span className="tool-more">{t('details')}</span> : null}
+        {status === 'completed' ? <FileActions paths={touchedPaths(item)} /> : null}
+      </summary>
+      {body}
+    </details>
+  );
+}
+
+const QUIET_KINDS: ToolKind[] = ['read', 'search', 'fetch', 'think'];
+
+/**
+ * Folds runs of quiet calls (reads, searches) into one line, like "Read 3 files · searched 2".
+ * `allTools` (the main agent): every run of tool calls becomes one line, so its conversation
+ * reads as what was said, not how it looked things up.
+ */
+export function groupTranscript(items: TranscriptItem[], allTools = false): Array<TranscriptItem | TranscriptItem[]> {
+  const out: Array<TranscriptItem | TranscriptItem[]> = [];
+  let run: TranscriptItem[] = [];
+  const flush = () => {
+    if (run.length >= (allTools ? 1 : 2)) out.push(run);
+    else out.push(...run);
+    run = [];
+  };
+  for (const it of items) {
+    const quiet = it.role === 'tool' && (allTools || QUIET_KINDS.includes(it.tool?.kind ?? 'other')) && (it.toolStatus === 'completed' || it.toolStatus === undefined || (allTools && it.toolStatus !== 'awaiting_approval'));
+    if (quiet) run.push(it);
+    else {
+      flush();
+      out.push(it);
+    }
+  }
+  flush();
+  return out;
+}
+
+/** How many of the latest turns stay open; earlier ones fold to: your message, a summary, the reply. */
+/** The latest turn stays open; earlier ones fold to a line. */
+export const OPEN_TURNS = 1;
+
+export interface Turn {
+  /** The user's message that starts it (none for what came before the first one). */
+  user?: TranscriptItem;
+  /** Everything the agent did on the way: tool calls, thinking, messages along the way. */
+  steps: TranscriptItem[];
+  /** Its last message: the answer. */
+  final?: TranscriptItem;
+  /** Still going (streaming, a tool running or waiting for approval). */
+  live: boolean;
+}
+
+/**
+ * The conversation as turns: each of the user's messages and what the agent did until the next one. A
+ * message added while the agent was working (steering it, not stopping it) belongs to the turn it joined.
+ */
+export function splitTurns(items: TranscriptItem[]): Turn[] {
+  const turns: Array<{ user?: TranscriptItem; rest: TranscriptItem[] }> = [];
+  for (const it of items) {
+    const starts = it.role === 'user' && !(it.delivery === 'steer' && turns.length);
+    if (starts || !turns.length) turns.push(it.role === 'user' ? { user: it, rest: [] } : { rest: [it] });
+    else turns[turns.length - 1].rest.push(it);
+  }
+  return turns.map(({ user, rest }) => {
+    const final = [...rest].reverse().find((i) => i.role === 'assistant' && i.text.trim());
+    return {
+      user,
+      final,
+      steps: rest.filter((i) => i !== final),
+      live: rest.some((i) => i.streaming || i.toolStatus === 'running' || i.toolStatus === 'awaiting_approval'),
+    };
+  });
+}
+
+/** Whether a turn shows folded: not one of the latest, not still going, and with steps worth folding. */
+export function foldsTurn(turn: Turn, index: number, count: number): boolean {
+  return index < count - OPEN_TURNS && !turn.live && turn.steps.length >= 2;
+}
+
+/** "14 steps · edited 3 files · ran 4 commands · 1 failed · 2 min" for a folded turn. */
+export function turnSummary(turn: Turn): string {
+  const tools = turn.steps.filter((i) => i.role === 'tool');
+  const edited = new Set(tools.filter((i) => ['edit', 'delete', 'move'].includes(i.tool?.kind ?? '')).map((i) => i.tool?.locations[0]?.path ?? i.id)).size;
+  const ran = tools.filter((i) => i.tool?.kind === 'execute').length;
+  const failed = tools.filter((i) => i.toolStatus === 'failed').length;
+  const end = turn.final ?? turn.steps.at(-1);
+  const ms = turn.user && end ? Date.parse(end.createdAt) - Date.parse(turn.user.createdAt) : 0;
+  const took = ms >= 60_000 ? t('{n} min', { n: Math.round(ms / 60_000) }) : ms >= 1000 ? t('{n} s', { n: Math.round(ms / 1000) }) : '';
+  return [
+    t(turn.steps.length === 1 ? '{n} step' : '{n} steps', { n: turn.steps.length }),
+    edited && t(edited === 1 ? 'edited {n} file' : 'edited {n} files', { n: edited }),
+    ran && t(ran === 1 ? 'ran {n} command' : 'ran {n} commands', { n: ran }),
+    failed && t('{n} failed', { n: failed }),
+    took,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/** The main agent's workspace tools, as one-line actions. */
+const WORKSPACE_ACTION: Record<string, string> = {
+  list_workspace_agents: 'checked the agents',
+  read_agent: 'read an agent’s conversation',
+  agent_changes: 'looked at an agent’s changes',
+  project_overview: 'looked at a project',
+  list_projects: 'listed the projects',
+  list_requests: 'checked what agents are waiting on',
+  send_to_agent: 'passed on a message',
+  create_agent: 'started an agent',
+  fork_agent: 'forked an agent',
+  stop_agent: 'stopped an agent',
+  answer_request: 'answered a request',
+  save_memory: 'saved a note',
+};
+
+export function mainActions(items: TranscriptItem[]): string {
+  const counts = new Map<string, number>();
+  for (const i of items) {
+    const name = (i.tool?.title ?? '').split(' / ').pop() ?? '';
+    const action = WORKSPACE_ACTION[name] ?? i.tool?.title ?? 'Tool';
+    counts.set(action, (counts.get(action) ?? 0) + 1);
+  }
+  return [...counts].map(([a, n]) => (n > 1 ? `${t(a)} ×${n}` : t(a))).join(' · ');
+}
+
+export function ToolGroup({ items, main }: { items: TranscriptItem[]; main?: boolean }) {
+  const n = (k: ToolKind) => items.filter((i) => i.tool?.kind === k).length;
+  const parts = main ? [mainActions(items)] : [
+    n('read') && t(n('read') > 1 ? 'read {n} files' : 'read {n} file', { n: n('read') }),
+    n('search') && t('searched {n}×', { n: n('search') }),
+    n('fetch') && t('fetched {n}', { n: n('fetch') }),
+    n('think') && t('updated plan'),
+  ];
+  const failed = items.some((i) => i.toolStatus === 'failed');
+  const label = (parts.filter(Boolean) as string[]).join(' · ');
+  return (
+    <details className="msg tool tool-group" data-testid="tool-group">
+      <summary>
+        <span className="tool-status">
+          <StatusIcon status={items.some((i) => i.toolStatus === 'running') ? 'running' : failed ? 'failed' : 'completed'} />
+        </span>
+        <Icon name="list" size={13} />
+        <span className="tool-label">{label.charAt(0).toUpperCase() + label.slice(1)}</span>
+      </summary>
+      <div className="tool-group-items">
+        {items.map((i) => (
+          <ToolCallRow key={i.id} item={i} />
+        ))}
+      </div>
+    </details>
+  );
+}
+
+/** Live checklist (TodoWrite / Codex plan). `compact` shows progress and the current step only. */
+/**
+ * A plan step's state as a small circle, drawn (not a font glyph, which sits differently
+ * in every font): empty = to do, half-filled ring = in progress, filled with a check = done.
+ */
+export function PlanStatusIcon({ status }: { status: PlanEntry['status'] }) {
+  return (
+    <svg className={`plan-icon plan-icon-${status}`} viewBox="0 0 16 16" width="14" height="14" aria-hidden>
+      {status === 'completed' ? (
+        <>
+          <circle cx="8" cy="8" r="7" />
+          <path d="M4.8 8.3l2.1 2.1 4.3-4.6" />
+        </>
+      ) : status === 'in_progress' ? (
+        <>
+          <circle cx="8" cy="8" r="6.25" />
+          <path d="M8 4.25a3.75 3.75 0 0 1 0 7.5z" />
+        </>
+      ) : (
+        <circle cx="8" cy="8" r="6.25" />
+      )}
+    </svg>
+  );
+}
+
+export function PlanChecklist({ plan, compact }: { plan: PlanInfo; compact?: boolean }) {
+  const done = plan.entries.filter((e) => e.status === 'completed').length;
+  const current = plan.entries.find((e) => e.status === 'in_progress');
+  return (
+    <div className={`plan${compact ? ' plan-compact' : ''}`} data-testid="plan">
+      <div className="plan-head">
+        <Icon name="list" size={12} />
+        <span>
+          {t('Plan {done}/{total}', { done, total: plan.entries.length })}
+        </span>
+        <span className="plan-bar" aria-hidden>
+          <span style={{ width: `${(done / Math.max(1, plan.entries.length)) * 100}%` }} />
+        </span>
+      </div>
+      {compact ? (
+        current ? (
+          <div className="plan-current">
+            <PlanStatusIcon status="in_progress" />
+            <span className="truncate">{current.content}</span>
+          </div>
+        ) : null
+      ) : (
+        <>
+          {plan.explanation ? <div className="muted small">{plan.explanation}</div> : null}
+          <ul className="plan-list">
+            {plan.entries.map((e, i) => (
+              <li key={e.id ?? i} className={`plan-${e.status}`}>
+                <PlanStatusIcon status={e.status} />
+                <span className="plan-text">{e.content}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}

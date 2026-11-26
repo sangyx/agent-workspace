@@ -105,8 +105,9 @@ describe('detached remote process', () => {
     const c = collect(p);
     await new Promise((r) => setTimeout(r, 1500));
     const [dir] = runs().filter((d) => !before.includes(d));
-    // No exit code will come: run.sh and the CLI both gone.
-    await runner.run(`cd "$HOME/.cache/agent-workspace/run/${dir}" && kill -9 $(cat pid) $(pgrep -f "run.sh.*${dir}") 2>/dev/null; true`);
+    // Stop the wrapper first so it cannot record exit 137 while the CLI is killed.
+    // This case specifically exercises a vanished wrapper with no exit record.
+    await runner.run(`cd "$HOME/.cache/agent-workspace/run/${dir}" && kill -9 $(pgrep -f "run.sh.*${dir}") 2>/dev/null; kill -9 $(cat pid) 2>/dev/null; true`);
     expect(await c.exit).toEqual([255, null]);
     expect(runs()).not.toContain(dir);
   }, 15_000);

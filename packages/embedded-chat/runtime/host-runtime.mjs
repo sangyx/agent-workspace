@@ -6,7 +6,10 @@ import { promisify } from "node:util";
 import { GeminiAdapter } from "./gemini-acp.mjs";
 const exec = promisify(execFile),
   send = (value) => process.stdout.write(JSON.stringify(value) + "\n");
-export async function startHost({
+export function createHostMethods({
+  workspace: providedWorkspace,
+  publish = () => {},
+  dataDir = process.env.AMW_EMBED_DATA,
   contextPrefix = "host-context-",
   contextSource = "Host project context",
   projectName = "Chats",
@@ -20,7 +23,6 @@ export async function startHost({
   readRemote,
   workDirs,
 }) {
-  const dataDir = process.env.AMW_EMBED_DATA;
   if (!dataDir) throw Error("Runtime data directory missing.");
   const workspaceOptions = {
     dataDir,
@@ -35,20 +37,22 @@ export async function startHost({
     },
     log: (...args) => console.error(...args),
   };
-  const ws = new Workspace(workspaceOptions);
+  const ws = providedWorkspace || new Workspace(workspaceOptions);
   // Preserve the prior fallback for legacy tasks with no saved override.
   // Newly created tasks receive their provider-specific default explicitly.
-  ws.store.data.settings.permissionMode = "ask";
-  ws.store.data.settings.autoListen = false;
-  ws.store.data.settings.memoryLinks = {};
+  if (!providedWorkspace) {
+    ws.store.data.settings.permissionMode = "ask";
+    ws.store.data.settings.autoListen = false;
+    ws.store.data.settings.memoryLinks = {};
+  }
   let revision = 0;
   ws.onChange(() => {
     revision++;
-    send({ event: "changed", revision });
+    publish({ event: "changed", revision });
   });
   ws.onTranscript(() => {
     revision++;
-    send({ event: "transcript", revision });
+    publish({ event: "transcript", revision });
   });
   const sideAsks = new Set();
   const checked = new Set(),
@@ -409,8 +413,10 @@ export async function startHost({
             : "claude";
         await check(engine);
         const adapter = workspaceOptions.adapters[engine];
-        workspaceOptions.backgroundModel = (system, prompt) =>
-          adapter.oneShot(system, prompt);
+        (providedWorkspace
+          ? providedWorkspace.opts
+          : workspaceOptions
+        ).backgroundModel = (system, prompt) => adapter.oneShot(system, prompt);
         try {
           const result = await ws.sessionMapGrouping(t.taskId);
           ws.store.flush();
@@ -420,7 +426,10 @@ export async function startHost({
             );
           return result;
         } finally {
-          workspaceOptions.backgroundModel = undefined;
+          (providedWorkspace
+            ? providedWorkspace.opts
+            : workspaceOptions
+          ).backgroundModel = undefined;
         }
       }
       case "fork": {
@@ -438,6 +447,10 @@ export async function startHost({
         throw Error("Unsupported bridge operation.");
     }
   };
+  return { call: method, shutdown: () => ws.shutdown(), workspace: ws };
+}
+export async function startHost(options) {
+  const host = createHostMethods({ ...options, publish: send });
   const lines = createInterface({ input: process.stdin });
   lines.on("line", (line) => {
     if (line.length > 20000000) return;
@@ -448,7 +461,7 @@ export async function startHost({
       return;
     }
     if (typeof m.id !== "number") return;
-    void method(m.method, m.args || {}).then(
+    void host.call(m.method, m.args || {}).then(
       (result) => send({ id: m.id, result }),
       (error) => send({ id: m.id, error: error.message }),
     );
@@ -457,11 +470,11 @@ export async function startHost({
   const close = async () => {
     if (closing) return;
     closing = true;
-    await ws.shutdown();
+    await host.shutdown();
     process.exit(0);
   };
   lines.on("close", () => void close());
   process.once("SIGTERM", () => void close());
   process.once("SIGINT", () => void close());
-  send({ event: "ready", revision });
+  send({ event: "ready", revision: 0 });
 }

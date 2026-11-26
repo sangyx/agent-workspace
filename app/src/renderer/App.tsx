@@ -1,3 +1,5 @@
+import {HostUsage} from './HostUsage';
+import {useWorkspaceEmbedding} from './embedding';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { fillSlots, IDLE_AFTER_MS, OVERVIEW_SLOTS, overviewCandidates, slotsFor, teams, visibleOrder } from '../shared/agent-order';
 import { call, errorText } from './api';
@@ -294,6 +296,15 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [dialog, snapshot, settingsOpen, focusId, subView]);
 
+  const [hostUsageOpen,setHostUsageOpen]=useState(false);
+  const embeddingCommand = useCallback((command: import('../renderer/embedding').WorkspaceHostCommand) => {
+    if (command.page === 'settings') { setSettingsSection(command.section); setSettingsOpen(true); }
+    else if (command.page) { setSettingsOpen(false); setSubView(null); if (command.page === 'overview') setFocusId(null); else if (command.taskId) { setFocusId(command.taskId); setPendingFocus(command.taskId); } }
+    if (command.action === 'new') setDialog('new');
+    if (command.action === 'import') setDialog('import');
+    if (command.action === 'usage') setHostUsageOpen(v=>!v);
+  }, []);
+  useWorkspaceEmbedding({focusId, settingsOpen, onCommand:embeddingCommand});
   if (!snapshot) return <div className="loading">{t('Loading workspace…')}</div>;
   // First run: the guide takes the Overview's place on a fresh workspace until finished or skipped
   // (it stays while the user brings work in). Not in the demo, which seeds its own agents.
@@ -495,6 +506,7 @@ export function App() {
         <div className="stage-side" ref={setSideEl} data-testid="stage-side" />
       </div>
 
+      {hostUsageOpen && <HostUsage snapshot={snapshot} onClose={()=>setHostUsageOpen(false)} />}
       <div className="toasts" aria-live="polite">
         {toasts.map((x) => (
           <div key={x.id} className="toast" data-testid="toast">

@@ -35,12 +35,13 @@ declare global {
 }
 
 export interface Outputs {
+  'project:models': ModelOption[];
+  'task:setReasoningEffort': void;
   'workspace:snapshot': WorkspaceSnapshot;
   'transcript:get': TranscriptItem[];
   'project:pickDirectory': string | null;
   'project:add': Project;
   'project:rename': Project;
-  'project:models': ModelOption[];
   'ssh:hosts': Array<{ host: string; hostName?: string; user?: string }>;
   'ssh:setEnabled': void;
   'ssh:check': RemoteHostStatus;
@@ -56,7 +57,6 @@ export interface Outputs {
   'task:interrupt': void;
   'task:models': ModelOption[];
   'task:setModel': void;
-  'task:setReasoningEffort': void;
   'task:shell': { ok: boolean; error?: string };
   'memory:linkPreview': { incoming: MemoryCandidate[]; files: Array<{ path: string; kind: string; exists: boolean; before: string; after: string | null }>; blocked: string[] };
   'memory:link': { added: number; written: string[]; notices: string[]; errors: string[] };

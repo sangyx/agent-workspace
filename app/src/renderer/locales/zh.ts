@@ -1,11 +1,6 @@
 // Simplified Chinese UI strings, keyed by the English text used at the call site.
 // Provider names (Claude Code, Codex), agent names and agent output stay as-is.
 export const zh: Record<string, string> = {
-  'Workspace chat': '工作区对话',
-  'Untitled chat': '未命名对话',
-  'Edits in this shared directory affect other chats.': '修改此共享目录会影响其他对话。',
-  'Edits in this original directory affect other chats.': '修改此原始目录会影响其他对话。',
-
   // Time
   'just now': '刚刚',
   '{n}m ago': '{n} 分钟前',
