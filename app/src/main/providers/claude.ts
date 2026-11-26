@@ -83,7 +83,7 @@ function mainAgentOptions(sdk: Awaited<ReturnType<typeof loadSdk>>, tools: Works
   };
 }
 
-/** Entrypoints of saved sessions on this Mac, from the first lines of each transcript. */
+/** Entrypoints of saved sessions on this computer, from the first lines of each transcript. */
 async function localEntrypoints(ids: string[]): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   if (!ids.length) return out;
@@ -179,7 +179,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     const env = childEnv();
     const q = sdk.query({
       prompt: idle(),
-      options: { cwd: host ? '.' : tmpdir(), env, pathToClaudeCodeExecutable: executable, settingSources: ['user'], ...(host ? { spawnClaudeCodeProcess: remoteSpawn(host, '.', env) } : {}), stderr: () => {} },
+      options: { cwd: host ? '.' : tmpdir(), env, pathToClaudeCodeExecutable: executable, settingSources: ['user'], ...(host ? { spawnClaudeCodeProcess: remoteSpawn(host, '.', env, undefined, { detached: false }) } : {}), stderr: () => {} },
     });
     try {
       const models = await q.supportedModels();
@@ -531,7 +531,7 @@ class ClaudeSession implements ProviderSession {
     await this.query?.setPermissionMode(CLAUDE_MODE[mode]);
   }
 
-  /** From the next request on (the running turn keeps its model). */
+  /** From the next request on, as /model does (the running turn's next step included). */
   async setModel(model: string | undefined): Promise<void> {
     await this.query?.setModel(model);
     this.args.model = model;

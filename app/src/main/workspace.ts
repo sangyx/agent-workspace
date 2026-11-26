@@ -39,7 +39,7 @@ import type { LocalStt } from './stt/local';
 import { STT_MODEL, ROUTER_MODEL } from './openai';
 import type { HistoryImage, ProviderAdapter, ProviderEvent, ProviderSession } from './providers/types';
 import { AttachmentStore, MAX_IMAGES } from './attachments';
-import { CONTINUE_PROMPT, DEFAULT_RETRY, RETRY_LABEL, RETRY_PROMPT, retryDelayMs, type RetryPolicy } from './retry';
+import { CONTINUE_PROMPT, DEFAULT_RETRY, RECONNECT_PROMPT, RETRY_LABEL, RETRY_PROMPT, retryDelayMs, type RetryPolicy } from './retry';
 import { decideDeterministic, decideRoute, type RouteContext } from './router';
 import { aliasFor, JsonStore } from './store';
 import { ALIAS_PROBLEM_TEXT, aliasProblem, normalizeAlias } from '../shared/agent-name';
@@ -55,6 +55,7 @@ import { browsePath, matchFiles, type FileMatch } from '../shared/file-match';
 import { MemoryWriteback, notesFor, ownerOf, plan as planWriteback, renderNotes, type BackupEntry, type TargetKind, type TargetState, type WriteResult } from './memory-writeback';
 import { parseRemoteScan, remoteScanScript, scanLocal, SkillLibrary, type FoundSkill } from './skills';
 import { loadKeychainKeys, openInTerminal, shq, sshConnect, sshError, sshHostEntries, sshHosts, sshProbe, sshRun, unlockKeys, type SshHostEntry } from './util/ssh';
+import { settleStops } from './util/detached';
 
 /** Words that clearly approve (zh / en). */
 const APPROVAL = /(批准|允许|同意|可以|行|好的|确认|执行吧|跑吧|\b(yes|yep|allow|approve|approved|go ahead|ok|okay|sure|do it|confirm)\b)/i;
@@ -85,6 +86,7 @@ interface LiveSession {
 }
 
 /** A `!command` the user typed is stopped after this long. */
+/** A command run with `!`: stopped after this long unless Settings › Advanced says otherwise. */
 const SHELL_TIMEOUT_MS = 10 * 60_000;
 /** How much of a command's output goes to the agent with the next message. */
 const SHELL_CONTEXT_CHARS = 20_000;
@@ -111,12 +113,16 @@ export interface WorkspaceOptions {
   hiddenSessionDirs?: string[];
   /** Automatic retries of turns that failed because the model was busy (tests use short waits). */
   retry?: Partial<RetryPolicy>;
-  /** Home folder whose native memory files this Mac's scan reads (tests); default $HOME. */
+  /** Home folder whose native memory files this computer's scan reads (tests); default $HOME. */
   home?: string;
   /** Replaces the CLIs' one-shot answers for background jobs (tests). */
   backgroundModel?: (system: string, prompt: string) => Promise<string>;
   /** How long a label stands before new work may rewrite it (tests use 0). */
   labelRefreshMs?: number;
+  /** Waits between attempts to reach a host again after its connection went (ms; the last repeats). */
+  reconnectMs?: number[];
+  /** Stops trying (quietly) after this long without reaching the host; waking up or a message starts again. */
+  reconnectGiveUpMs?: number;
 }
 
 /**
@@ -146,6 +152,8 @@ export class Workspace {
   private retryPolicy: RetryPolicy;
   /** taskId → the try in progress or waiting (2 = first retry) of the last instruction, and its timer while waiting. */
   private retries = new Map<string, { attempt: number; timer?: NodeJS.Timeout }>();
+  /** Hosts whose connection went, with their agents to connect again (true: it was working, carry on). */
+  private reconnects = new Map<string, { attempt: number; since: number; timer?: NodeJS.Timeout; tasks: Map<string, boolean> }>();
 
   /** The skill library loaded into every agent the app starts (see skills.ts). */
   readonly skills: SkillLibrary;
@@ -319,6 +327,23 @@ export class Workspace {
         t.summary = t.summary ? `${t.summary} (app restarted — resume to continue)` : 'App restarted — resume to continue';
       }
     }
+    // A lost connection to a host is no error to keep (they reconnect when used): earlier ones, from
+    // before agents reconnected by themselves, leave the waiting list.
+    for (const t of d.tasks) {
+      if (!t.host) continue;
+      let cleared = false;
+      for (const a of d.attention)
+        if (a.taskId === t.taskId && a.state === 'open' && a.kind === 'error' && this.connectionLost(t, `${a.headline} ${a.details ?? ''}`)) {
+          a.state = 'resolved';
+          a.resolvedAt = now();
+          a.resolution = 'Connection errors are not kept; the agent reconnects when used.';
+          cleared = true;
+        }
+      if (t.status === 'failed' && (cleared || this.connectionLost(t, t.lastError))) {
+        t.status = 'disconnected';
+        t.summary = `Not connected to ${t.host}. Reconnects when you send a message.`;
+      }
+    }
     // A side question still unanswered when the app quit will not be answered now.
     for (const list of Object.values(d.btw ?? {}))
       for (const e of list) if (!e.answer && !e.error) e.error = 'The app quit before this was answered.';
@@ -334,7 +359,7 @@ export class Workspace {
   }
 
   /**
-   * Looks at the CLIs on this Mac again, and (unless `localOnly`) at the SSH hosts, quietly: their
+   * Looks at the CLIs on this computer again, and (unless `localOnly`) at the SSH hosts, quietly: their
    * rows keep the last result meanwhile. The first-run guide polls with `localOnly` while the user
    * installs or signs in here; hosts have their own slower recheck.
    */
@@ -452,9 +477,13 @@ export class Workspace {
     // Detach first so close-time events are dropped; restart recovery then marks state honestly.
     for (const r of this.retries.values()) clearTimeout(r.timer);
     this.retries.clear();
+    for (const r of this.reconnects.values()) clearTimeout(r.timer);
+    this.reconnects.clear();
     const sessions = [...this.live.values()];
     this.live.clear();
     for (const l of sessions) await l.session.close().catch(() => {});
+    // CLIs on hosts run detached from their connection: their stops have to reach the host before we go.
+    await settleStops();
     this.store.flush();
   }
 
@@ -1220,8 +1249,14 @@ export class Workspace {
         throw error;
       }
       const message = (error as Error).message;
-      task.status = 'failed';
       task.lastError = message;
+      if (this.connectionLost(task, message)) {
+        // The host is out of reach for now: tried again by itself, no error to dismiss.
+        this.scheduleReconnect(task, false);
+        this.changed();
+        throw error;
+      }
+      task.status = 'failed';
       task.summary = `Could not ${resumeId ? 'resume' : 'start'} ${task.provider} session: ${clip(message, 140)}`;
       this.addAttention({ taskId, kind: 'error', headline: task.summary, details: message });
       this.changed();
@@ -1245,6 +1280,9 @@ export class Workspace {
       this.changed();
       return live;
     }
+    // Connected by the user's hand: no longer waiting to be reconnected.
+    this.dropReconnect(taskId);
+    this.resolveConnectionErrors(taskId);
     if (task.status === 'starting') task.status = 'idle';
     task.summary = resumeId ? 'Session resumed with its previous conversation.' : task.summary;
     this.changed();
@@ -1277,6 +1315,7 @@ export class Workspace {
 
   async stop(taskId: string): Promise<void> {
     this.cancelRetry(taskId);
+    this.dropReconnect(taskId);
     const l = this.live.get(taskId);
     if (!l) return;
     this.live.delete(taskId);
@@ -1346,7 +1385,7 @@ export class Workspace {
    * Claude and ChatGPT desktop apps created there through their SSH connections).
    */
   /**
-   * The folders inside `dir` on this Mac or on `host` (for typing a path with completion). `~` is the
+   * The folders inside `dir` on this computer or on `host` (for typing a path with completion). `~` is the
    * home folder there. Returns the folder as resolved and its subfolders' names (dot-folders included;
    * the caller decides). A path that is not a folder gives no names.
    */
@@ -1379,12 +1418,12 @@ export class Workspace {
   /**
    * Files dropped on an agent's message box, as @-mentions: relative to the agent's folder when
    * inside it, else from ~ or /, a folder ending in /. The agent reads them where it is, so an agent
-   * on an SSH host (the files are on this Mac) refuses. The main agent gets full paths, to pass on.
+   * on an SSH host (the files are on this computer) refuses. The main agent gets full paths, to pass on.
    */
   droppedFiles(taskId: string, paths: string[]): FileMatch[] {
     const task = this.task(taskId);
     const main = task === this.store.data.mainAgent;
-    if (task.host) throw new Error(`These files are on this Mac; ${task.alias} runs on ${task.host} and cannot read them. Copy them there, or mention a file on ${task.host} with @.`);
+    if (task.host) throw new Error(`These files are on this computer; ${task.alias} runs on ${task.host} and cannot read them. Copy them there, or mention a file on ${task.host} with @.`);
     const home = homedir();
     return paths.map((p) => {
       const abs = resolve(p);
@@ -1513,7 +1552,7 @@ export class Workspace {
    * newest first, minus ones already imported and the app's own scratch dirs.
    */
   async discoverAllSessions(): Promise<NativeSessionInfo[]> {
-    // Tests read a fixture (a JSON list) instead of this Mac's real Claude Code / Codex sessions.
+    // Tests read a fixture (a JSON list) instead of this computer's real Claude Code / Codex sessions.
     if (process.env.AMW_DISCOVER_FIXTURE) return (JSON.parse(readFileSync(process.env.AMW_DISCOVER_FIXTURE, 'utf8')) as NativeSessionInfo[]).filter((s) => !s.host);
     const known = this.attachedSessionIds();
     const own = [this.opts.dataDir, ...(this.opts.hiddenSessionDirs ?? []), tmpdir(), '/var/folders', '/private/var/folders', '/private/tmp', '/tmp'].map((p) => resolve(p));
@@ -1743,7 +1782,7 @@ export class Workspace {
   /**
    * Images in a user message read back from a CLI's history, kept in the app's store so the
    * conversation shows them. A file on an SSH host is not fetched (it shows as an image that
-   * could not be kept); bytes from history and files on this Mac are.
+   * could not be kept); bytes from history and files on this computer are.
    */
   private historyImages(images: HistoryImage[] | undefined, host: string | undefined): ImageRef[] | undefined {
     if (!images?.length) return undefined;
@@ -1845,7 +1884,7 @@ export class Workspace {
       try {
         const live = await this.connect(taskId);
         if (live.session.shell) {
-          await live.session.shell(command);
+          await live.session.shell(command, this.commandTimeoutMs());
           return { ok: true };
         }
       } catch (error) {
@@ -1858,11 +1897,12 @@ export class Workspace {
     const tool: ToolCallInfo = { name: 'Bash', kind: 'execute', title: `! ${first}`, locations: [], content: [terminal], byUser: true };
     this.upsertTranscript(taskId, { id, taskId, role: 'tool', text: '', toolStatus: 'running', tool, createdAt: now() });
     this.changed();
+    const timeoutMs = this.commandTimeoutMs();
     const r = task.host
-      ? await sshRun(task.host, `cd ${shq(task.cwd)} && { ${command}\n}`, SHELL_TIMEOUT_MS)
+      ? await sshRun(task.host, `cd ${shq(task.cwd)} && { ${command}\n}`, timeoutMs)
       : process.platform === 'win32'
-        ? await run('cmd.exe', ['/d', '/s', '/c', command], { cwd: task.cwd, timeoutMs: SHELL_TIMEOUT_MS })
-        : await run(process.env.SHELL || '/bin/sh', ['-lc', command], { cwd: task.cwd, timeoutMs: SHELL_TIMEOUT_MS });
+        ? await run('cmd.exe', ['/d', '/s', '/c', command], { cwd: task.cwd, timeoutMs })
+        : await run(process.env.SHELL || '/bin/sh', ['-lc', command], { cwd: task.cwd, timeoutMs });
     const output = [r.stdout, r.stderr].filter((s) => s.trim()).join('\n');
     this.upsertTranscript(taskId, { id, taskId, role: 'tool', text: '', toolStatus: r.code === 0 ? 'completed' : 'failed', createdAt: now() }, { content: [{ ...terminal, output: clipOutput(output), exitCode: r.code }] });
     const pending = this.shellOutput.get(taskId) ?? [];
@@ -1910,7 +1950,7 @@ export class Workspace {
    */
   async setRemoteControl(taskId: string, on: boolean): Promise<string | undefined> {
     const task = this.task(taskId);
-    if ((task.provider !== 'claude' && task.provider !== 'mock') || task.host || this.store.data.mainAgent?.taskId === taskId) throw new Error('Remote Control is for Claude Code agents on this Mac.');
+    if ((task.provider !== 'claude' && task.provider !== 'mock') || task.host || this.store.data.mainAgent?.taskId === taskId) throw new Error('Remote Control is for Claude Code agents on this computer.');
     let live = this.live.get(taskId);
     if (!live) {
       if (!on) return undefined;
@@ -1954,7 +1994,7 @@ export class Workspace {
     this.changed();
   }
 
-  /** The library for an agent on this Mac, or its copy on the agent's host (copied when it changed). */
+  /** The library for an agent on this computer, or its copy on the agent's host (copied when it changed). */
   private async skillsFor(task: Task): Promise<{ pluginDir: string; root: string } | undefined> {
     try {
       return task.host ? await this.skills.ensureOnHost(task.host) : this.skills.localLoad();
@@ -1968,7 +2008,7 @@ export class Workspace {
   /** Last scan's results, so an import names a found skill by key rather than by path. */
   private foundSkills = new Map<string, FoundSkill>();
 
-  /** Skills in the CLIs' own folders on this Mac and on every reachable enabled host. */
+  /** Skills in the CLIs' own folders on this computer and on every reachable enabled host. */
   async scanSkills(): Promise<{ found: FoundSkill[]; errors: Array<{ host: string; error: string }> }> {
     const errors: Array<{ host: string; error: string }> = [];
     const found: FoundSkill[] = [...scanLocal()];
@@ -2283,8 +2323,18 @@ export class Workspace {
       case 'sessionDisconnected': {
         this.endSubtasks(task, 'The agent disconnected.');
         this.live.delete(taskId);
-        this.handBackRetry(task);
         const reason = event.type === 'sessionFailed' ? event.error : event.reason;
+        if (event.type === 'sessionFailed' && this.connectionLost(task, reason)) {
+          // The connection to its host went (not the agent): reconnected by itself, and a turn it was in
+          // carries on then. No error to dismiss meanwhile.
+          const working = live.turnActive || task.retry?.by === 'app';
+          this.cancelRetry(taskId);
+          task.lastError = reason;
+          this.expireNative(taskId, sessionLocalId, `Provider session ended: ${reason}`);
+          this.scheduleReconnect(task, working);
+          break;
+        }
+        this.handBackRetry(task);
         task.status = event.type === 'sessionFailed' ? 'failed' : 'disconnected';
         task.lastError = reason;
         task.summary = `${event.type === 'sessionFailed' ? 'Session failed' : 'Disconnected'}: ${clip(reason, 140)}`;
@@ -2303,6 +2353,135 @@ export class Workspace {
       this.throttle = undefined;
       this.changed();
     }, 120);
+  }
+
+  // ---------------------------------------------------------------- reconnecting
+
+  /**
+   * Whether a failure is the connection to the agent's host rather than the agent: it mends itself
+   * once the host answers again. Not when the user has to act (a login, a key, a host key).
+   */
+  private connectionLost(task: Task, reason: string | undefined): boolean {
+    if (!task.host || !reason) return false;
+    if (/needs a login|unlocked key|host key|not signed in|not installed|no longer exists|refused another SSH session/i.test(reason)) return false;
+    return /ssh|ended unexpectedly|connection|could not resolve|unreachable|no route to host|timed out|cannot reach|is not connected|exited \(255\)|code 255/i.test(reason);
+  }
+
+  private scheduleReconnect(task: Task, working: boolean): void {
+    const host = task.host!;
+    const r = this.reconnects.get(host) ?? { attempt: 0, since: Date.now(), tasks: new Map<string, boolean>() };
+    r.tasks.set(task.taskId, (r.tasks.get(task.taskId) ?? false) || working);
+    this.reconnects.set(host, r);
+    task.status = 'disconnected';
+    task.summary = `Lost the connection to ${host}; reconnecting…`;
+    if (!r.timer) this.armReconnect(host);
+  }
+
+  private armReconnect(host: string, delayMs?: number): void {
+    const r = this.reconnects.get(host);
+    if (!r) return;
+    if (r.timer) clearTimeout(r.timer);
+    // Soon at first (a blip), then further apart (a machine that is off): every 10 minutes at most.
+    const waits = this.opts.reconnectMs ?? [5_000, 15_000, 30_000, 60_000, 120_000, 300_000, 600_000];
+    r.timer = setTimeout(() => void this.runReconnect(host), delayMs ?? waits[Math.min(r.attempt, waits.length - 1)]);
+  }
+
+  /** The computer woke up (or the screen unlocked): try every waiting host again shortly, from the start. */
+  reconnectNow(): void {
+    for (const [host, r] of this.reconnects) {
+      r.attempt = 0;
+      r.since = Date.now();
+      this.armReconnect(host, 3000);
+    }
+    // Those that stopped trying start again too.
+    for (const [host, ids] of this.givenUp) {
+      this.givenUp.delete(host);
+      for (const id of ids) {
+        const task = this.findTask(id);
+        if (task && task.status === 'disconnected' && !this.live.has(id)) this.scheduleReconnect(task, false);
+      }
+      const r = this.reconnects.get(host);
+      if (r) this.armReconnect(host, 3000);
+    }
+  }
+
+  /** Hosts tried for a day without an answer: their agents wait, quietly, for a wake-up or a message. */
+  private givenUp = new Map<string, Set<string>>();
+
+  private async runReconnect(host: string): Promise<void> {
+    const r = this.reconnects.get(host);
+    if (!r) return;
+    r.timer = undefined;
+    r.attempt++;
+    const status = await this.checkHost(host, { quiet: true }).catch(() => undefined);
+    if (status && ['needs_key', 'needs_login', 'unknown_host_key'].includes(status.ssh)) {
+      // Only the user can let it in: one note on the first agent, and the rest wait for them.
+      this.reconnects.delete(host);
+      const first = [...r.tasks.keys()].map((id) => this.findTask(id)).find(Boolean);
+      if (first) this.addAttention({ taskId: first.taskId, kind: 'error', headline: `Cannot reconnect to ${host}: ${clip(status.error ?? 'it needs a login', 140)}`, details: status.error ?? '' });
+      this.changed();
+      return;
+    }
+    if (status?.ssh === 'ok') {
+      for (const [taskId, working] of [...r.tasks]) {
+        const task = this.findTask(taskId);
+        if (!task || this.live.has(taskId)) {
+          r.tasks.delete(taskId);
+          continue;
+        }
+        try {
+          const live = await this.connect(taskId, true);
+          r.tasks.delete(taskId);
+          this.resolveConnectionErrors(taskId);
+          this.appendSystem(taskId, `Reconnected to ${host}.`);
+          if (working) {
+            // Carries on with the turn the connection cut short.
+            this.claim(taskId, live);
+            task.summary = 'Reconnected; carrying on with the turn.';
+            await live.session.send(RECONNECT_PROMPT).catch((error) => this.turnFailed(task, (error as Error).message, undefined, 1));
+          } else task.summary = 'Reconnected.';
+        } catch (error) {
+          const message = (error as Error).message;
+          if (!this.connectionLost(task, message)) {
+            // Reachable, but the agent itself cannot start: that is for the user.
+            r.tasks.delete(taskId);
+            task.status = 'failed';
+            task.lastError = message;
+            task.summary = `Could not reconnect: ${clip(message, 140)}`;
+            this.addAttention({ taskId, kind: 'error', headline: task.summary, details: message });
+          }
+        }
+      }
+    }
+    if (!r.tasks.size) this.reconnects.delete(host);
+    else if (Date.now() - r.since > (this.opts.reconnectGiveUpMs ?? 24 * 3600_000)) {
+      // A day without an answer (the machine is off): stop trying; the agent says so, no error.
+      this.reconnects.delete(host);
+      this.givenUp.set(host, new Set(r.tasks.keys()));
+      for (const id of r.tasks.keys()) {
+        const task = this.findTask(id);
+        if (task) task.summary = `Cannot reach ${host}. Reconnects when you send a message, or when the computer wakes.`;
+      }
+    } else this.armReconnect(host);
+    this.changed();
+  }
+
+  /** No longer waiting to be reconnected (stopped, removed, or connected by the user). */
+  private dropReconnect(taskId: string): void {
+    for (const ids of this.givenUp.values()) ids.delete(taskId);
+    for (const [host, r] of this.reconnects) {
+      if (!r.tasks.delete(taskId) || r.tasks.size) continue;
+      clearTimeout(r.timer);
+      this.reconnects.delete(host);
+    }
+  }
+
+  /** Errors about a connection that is back are over. */
+  private resolveConnectionErrors(taskId: string): void {
+    const task = this.findTask(taskId);
+    if (!task) return;
+    for (const a of this.store.data.attention)
+      if (a.taskId === taskId && a.state === 'open' && a.kind === 'error' && this.connectionLost(task, `${a.headline} ${a.details ?? ''}`)) this.closeAttention(a, 'resolved', 'Reconnected.');
   }
 
   // ---------------------------------------------------------------- retries
@@ -2376,6 +2555,8 @@ export class Workspace {
   // ---------------------------------------------------------------- attention
 
   private addAttention(a: Omit<AttentionItem, 'id' | 'state' | 'createdAt'>): AttentionItem {
+    // One error per agent: the latest says what is wrong now.
+    if (a.kind === 'error') for (const o of this.store.data.attention) if (o.taskId === a.taskId && o.state === 'open' && o.kind === 'error') this.closeAttention(o, 'resolved', 'Superseded by a newer error.');
     const item: AttentionItem = { ...a, id: `a-${randomUUID().slice(0, 8)}`, state: 'open', createdAt: now() };
     this.store.data.attention.push(item);
     // Anything but a finished report needs the user: an agent they set aside comes back.
@@ -2653,7 +2834,7 @@ export class Workspace {
     return candidatesFrom(host, out.home, out.files, this.store.data.projects, out.shared);
   }
 
-  /** This Mac and every reachable enabled host; hosts that are not connected are reported, not waited for. */
+  /** This computer and every reachable enabled host; hosts that are not connected are reported, not waited for. */
   async scanMemoryImports(): Promise<{ candidates: MemoryCandidate[]; scanned: string[]; errors: Array<{ host: string; error: string }> }> {
     const errors: Array<{ host: string; error: string }> = [];
     const ready: Array<string | undefined> = [undefined];
@@ -3009,6 +3190,16 @@ export class Workspace {
     ].join('\n');
   }
 
+  private commandTimeoutMs(): number {
+    const min = this.store.data.settings.commandTimeoutMin;
+    return min ? min * 60_000 : SHELL_TIMEOUT_MS;
+  }
+
+  mainLimits(): { calls?: number; forks?: number } {
+    const s = this.store.data.settings;
+    return { calls: s.mainCallsPerTurn, forks: s.mainForksPerTurn };
+  }
+
   mainTurn(): number {
     return this.mainTurns;
   }
@@ -3216,7 +3407,7 @@ export class Workspace {
 
   /** Folders a task's files may be previewed from: its cwd, its worktree, its project. */
   private previewRoots(t: Task): string[] {
-    // The main agent talks about every agent's files: any project or agent folder on this Mac.
+    // The main agent talks about every agent's files: any project or agent folder on this computer.
     if (t === this.store.data.mainAgent)
       return [t.cwd, ...this.store.data.projects.filter((p) => !p.host).map((p) => p.rootPath), ...this.store.data.tasks.filter((x) => !x.host).flatMap((x) => [x.cwd, x.worktree?.path])].filter((r): r is string => !!r);
     const project = this.store.data.projects.find((p) => p.projectId === t.projectId);
@@ -3234,8 +3425,8 @@ export class Workspace {
     return t.host ? readRemote(t.host, path, where) : readLocal(path, where);
   }
 
-  /** The checked local path to hand to the default app (this Mac only). */
-  /** The folder "Open with…" opens for an agent: its worktree or folder (the main agent's own too). On this Mac only. */
+  /** The checked local path to hand to the default app (this computer only). */
+  /** The folder "Open with…" opens for an agent: its worktree or folder (the main agent's own too). On this computer only. */
   agentFolder(taskId: string): string {
     const t = this.task(taskId);
     if (t.host) throw new Error(`${t.alias} works on ${t.host}; its folder is there.`);
