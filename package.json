@@ -8,6 +8,8 @@
     "demo": "npm --prefix app run demo",
     "test": "npm --prefix app test",
     "test:e2e": "npm --prefix app run test:e2e",
-    "typecheck": "npm --prefix app run typecheck"
+    "typecheck": "npm --prefix app run typecheck",
+    "test:embedded": "npm --prefix packages/embedded-chat test",
+    "typecheck:embedded": "npm --prefix packages/embedded-chat run typecheck"
   }
 }

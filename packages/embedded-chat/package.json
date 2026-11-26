@@ -1,0 +1,40 @@
+{
+  "name": "@agent-workspace/embedded-chat",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "exports": {
+    ".": "./src/index.ts",
+    "./types": "./src/workspaceChat.ts",
+    "./flow": "./src/chatFlow.ts",
+    "./presentation": "./src/chatPresentation.ts",
+    "./task-map": "./src/taskMap.ts",
+    "./preview": "./src/chatPreview.ts",
+    "./styles.css": "./src/styles.css",
+    "./runtime": "./runtime/host-runtime.mjs",
+    "./gemini": "./runtime/gemini-acp.mjs",
+    "./imports": "./src/chatImportPresentation.ts",
+    "./foundation.css": "./src/foundation.css"
+  },
+  "peerDependencies": {
+    "react": ">=18 <20",
+    "react-dom": ">=18 <20",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/react": "18.3.31",
+    "@types/react-dom": "18.3.7",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1",
+    "typescript": "5.9.3",
+    "vitest": "4.1.12"
+  }
+}

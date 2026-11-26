@@ -1,0 +1,22 @@
+name: Embedded Chat
+on:
+  pull_request:
+    paths: ['packages/embedded-chat/**', 'app/src/main/**', 'app/src/shared/**', '.github/workflows/embedded-chat.yml']
+  push:
+    branches: ['codex/embedded-chat']
+jobs:
+  embedded-chat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: packages/embedded-chat/package-lock.json
+      - run: npm ci --ignore-scripts --legacy-peer-deps
+        working-directory: packages/embedded-chat
+      - run: npm run typecheck
+        working-directory: packages/embedded-chat
+      - run: npm test
+        working-directory: packages/embedded-chat
