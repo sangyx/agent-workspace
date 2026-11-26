@@ -9,6 +9,7 @@ import type {
   AttentionQuestion,
   NativeSessionInfo,
   PermissionMode,
+  ReasoningEffort,
   ModelOption,
   ProviderCapabilities,
   RetryKind,
@@ -107,12 +108,15 @@ export interface StartArgs {
   host?: string;
   /** Resume this provider-native session instead of creating one. */
   resumeNativeSessionId?: string;
+  /** Replay saved history on resume when there is no local transcript cache. */
+  loadHistory?: boolean;
   /** App-owned scoped memory, injected through the provider's instruction channel. */
   developerInstructions?: string;
   /** Mock only. */
   mockScript?: string;
   /** The model to run on; unset = the CLI's default. */
   model?: string;
+  reasoningEffort?: ReasoningEffort | null;
   /** The workspace skill library, as paths on the machine the CLI runs on. */
   skills?: { pluginDir: string; root: string };
   permissionMode?: PermissionMode;
@@ -133,6 +137,8 @@ export type Delivery = 'turn' | 'steer' | 'interrupt';
 
 export interface ProviderSession {
   readonly provider: AgentProvider;
+  /** Whether a message can be added to a turn that is already running (default: true). */
+  readonly canSteer?: boolean;
   /** Known after sessionStarted. */
   nativeSessionId(): string | undefined;
   start(): Promise<void>;
@@ -153,6 +159,7 @@ export interface ProviderSession {
   shell?(command: string): Promise<void>;
   /** Runs the following turns on `model` (unset: the CLI's default). */
   setModel?(model: string | undefined): Promise<void>;
+  setReasoningEffort?(effort: ReasoningEffort | null): Promise<void>;
   /** The skill library changed (same paths, new contents): pick it up without a restart. */
   reloadSkills?(): Promise<void>;
   /** Changes what the agent may do without asking; applies from the next action (Claude) or turn (Codex). */

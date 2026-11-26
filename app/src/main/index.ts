@@ -5,10 +5,11 @@ import { randomUUID } from 'node:crypto';
 import { app, BrowserWindow, dialog, ipcMain, protocol, session, shell, systemPreferences } from 'electron';
 import { EVENT_TRANSCRIPT, EVENT_WORKSPACE, ipcSchemas, type IpcChannel } from '../shared/ipc';
 import { openableKind } from '../shared/preview';
-import type { ImageRef, PermissionMode, Settings, TranscriptItem } from '../shared/types';
+import type { ImageRef, NativeProvider, PermissionMode, ReasoningEffort, Settings, TranscriptItem } from '../shared/types';
 import { KeyStore } from './keystore';
 import { checkOpenAiKey, envOpenAiKey, loadOpenAiKey, OpenAiClient } from './openai';
 import { ClaudeAdapter } from './providers/claude';
+import { AntigravityAdapter } from './providers/antigravity';
 import { CodexAdapter } from './providers/codex';
 import { MockAdapter } from './providers/mock';
 import { LocalStt } from './stt/local';
@@ -63,6 +64,7 @@ const workspace = new Workspace({
   adapters: {
     claude: new ClaudeAdapter(),
     codex: new CodexAdapter(),
+    antigravity: new AntigravityAdapter(),
     mock: new MockAdapter(join(dataDir, 'mock-sessions')),
   },
   openai,
@@ -148,10 +150,11 @@ const handlers: { [C in IpcChannel]: Handler } = {
   'workspace:snapshot': () => workspace.snapshot(),
   'transcript:get': (i: { taskId: string }) => workspace.transcript(i.taskId),
   'project:pickDirectory': async () => {
-    const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory'] });
+    const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory', 'createDirectory'] });
     return r.canceled ? null : (r.filePaths[0] ?? null);
   },
   'project:rename': (i: { projectId: string; name: string }) => workspace.renameProject(i.projectId, i.name),
+  'project:models': (i: Parameters<Workspace['listProjectModels']>[0]) => workspace.listProjectModels(i),
   'project:add': (i: { rootPath: string; name?: string; host?: string }) => workspace.addProject(i.rootPath, i.name, i.host),
   'ssh:hosts': () => workspace.sshHosts(),
   'ssh:setEnabled': (i: { host: string; enabled: boolean }) => workspace.setHostEnabled(i.host, i.enabled),
@@ -173,6 +176,7 @@ const handlers: { [C in IpcChannel]: Handler } = {
   'task:interrupt': (i: { taskId: string }) => workspace.interrupt(i.taskId),
   'task:models': (i: { taskId: string }) => workspace.listModels(i.taskId),
   'task:setModel': (i: { taskId: string; model: string | null }) => workspace.setModel(i.taskId, i.model ?? undefined),
+  'task:setReasoningEffort': (i: { taskId: string; effort: ReasoningEffort | null }) => workspace.setReasoningEffort(i.taskId, i.effort),
   'task:shell': (i: { taskId: string; command: string }) => workspace.runShell(i.taskId, i.command),
   'memory:linkPreview': (i: { host: string }) => workspace.linkPreview(i.host),
   'memory:link': (i: { host: string }) => workspace.linkMachine(i.host),
@@ -202,7 +206,7 @@ const handlers: { [C in IpcChannel]: Handler } = {
   'task:viewed': (i: { taskId: string }) => workspace.markViewed(i.taskId),
   'task:setPermissionMode': (i: { taskId: string; mode: PermissionMode }) => workspace.setPermissionMode(i.taskId, i.mode),
   'task:remove': (i: { taskId: string }) => workspace.remove(i.taskId),
-  'sessions:discover': (i: { projectId: string; provider: 'claude' | 'codex' }) => workspace.discoverSessions(i.projectId, i.provider),
+  'sessions:discover': (i: { projectId: string; provider: NativeProvider }) => workspace.discoverSessions(i.projectId, i.provider),
   'sessions:discoverAll': () => workspace.discoverAllSessions(),
   // Side questions ("btw"): never part of the agent's conversation.
   // The session map: an agent's turns grouped into tasks by a model (null: group by structure).

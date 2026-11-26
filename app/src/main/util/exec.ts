@@ -14,6 +14,7 @@ function extraPathDirs(): string[] {
     join(home, '.bun', 'bin'),
     join(home, '.npm-global', 'bin'),
     join(home, '.volta', 'bin'),
+    ...(process.platform === 'win32' && process.env.LOCALAPPDATA ? [join(process.env.LOCALAPPDATA, 'agy', 'bin')] : []),
     // A GUI app does not get nvm's shell setup: look in its Node versions too, newest first.
     ...nvmBinDirs(home),
   ];

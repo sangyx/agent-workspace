@@ -10,7 +10,7 @@ import type {
   Query,
   SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
-import type { AttentionQuestion, ForkPoint, ModelOption, NativeSessionInfo, PermissionMode, ProviderCapabilities, TransientKind } from '../../shared/types';
+import type { AttentionQuestion, ForkPoint, ModelOption, NativeSessionInfo, PermissionMode, ProviderCapabilities, ReasoningEffort, TransientKind } from '../../shared/types';
 import { transientKind } from '../retry';
 import { childEnv, findExecutable, run } from '../util/exec';
 import { sshError, sshRun } from '../util/ssh';
@@ -30,6 +30,8 @@ import type { ApprovalResponse, Delivery, ForkSessionOpts, HistoryImage, ImageIn
 type SDK = typeof import('@anthropic-ai/claude-agent-sdk');
 let sdkPromise: Promise<SDK> | undefined;
 const loadSdk = () => (sdkPromise ??= import('@anthropic-ai/claude-agent-sdk'));
+const CLAUDE_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+const claudeEffort = (effort: StartArgs['reasoningEffort']) => CLAUDE_EFFORTS.find((level) => level === effort);
 
 const rec = (v: unknown): Record<string, unknown> =>
   v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
@@ -181,7 +183,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     });
     try {
       const models = await q.supportedModels();
-      return models.map((m) => ({ id: m.value, label: m.displayName || m.value, description: m.description, resolves: m.resolvedModel, isDefault: m.value === 'default' }));
+      return models.map((m) => ({ id: m.value, label: m.displayName || m.value, description: m.description, resolves: m.resolvedModel, isDefault: m.value === 'default', reasoningEfforts: m.supportedEffortLevels }));
     } finally {
       release();
       q.close();
@@ -445,6 +447,7 @@ class ClaudeSession implements ProviderSession {
         // will not approve, and everything in 'default', reaches canUseTool → the tile.
         permissionMode: CLAUDE_MODE[this.args.permissionMode ?? 'auto'],
         ...(this.args.model ? { model: this.args.model } : {}),
+        effort: claudeEffort(this.args.reasoningEffort),
         canUseTool: this.canUseTool,
         ...(this.args.tools?.length ? mainAgentOptions(sdk, this.args.tools) : {}),
         stderr: () => {
@@ -530,9 +533,16 @@ class ClaudeSession implements ProviderSession {
 
   /** From the next request on (the running turn keeps its model). */
   async setModel(model: string | undefined): Promise<void> {
-    this.args.model = model;
     await this.query?.setModel(model);
+    this.args.model = model;
     if (model) this.emit({ type: 'model', model });
+  }
+
+  async setReasoningEffort(effort: ReasoningEffort | null): Promise<void> {
+    const level = claudeEffort(effort);
+    if (effort !== null && !level) throw new Error('Claude Code does not support this reasoning effort.');
+    await this.query?.applyFlagSettings({ effortLevel: level ?? null });
+    this.args.reasoningEffort = effort;
   }
 
   async setRemoteControl(on: boolean, name?: string): Promise<{ url?: string }> {

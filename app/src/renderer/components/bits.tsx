@@ -33,7 +33,7 @@ export function StatusDot({ status, connected, label = true }: { status: AgentSt
   );
 }
 
-export const PROVIDER_LABEL: Record<AgentProvider, string> = { claude: 'Claude Code', codex: 'Codex', mock: 'Mock' };
+export const PROVIDER_LABEL: Record<AgentProvider, string> = { claude: 'Claude Code', codex: 'Codex', antigravity: 'Antigravity', mock: 'Mock' };
 
 /** "2.1.310 (Claude Code)" / "codex-cli 0.162.1" → the version number. */
 export function shortVersion(v: string): string {
@@ -52,20 +52,20 @@ export const KIND_LABEL: Record<AttentionKind, string> = {
   error: 'Error',
 };
 
+/** Both task graphs use the chart palette defined in styles.css. */
+export function chartColor(index: number): string {
+  return `var(--chart-${(index % 12) + 1})`;
+}
+
 export function Alias({ alias, size = 'md' }: { alias: string; size?: 'xs' | 'sm' | 'md' | 'lg' }) {
   const hue = ([...alias].reduce((n, c) => n + c.charCodeAt(0), 0) * 67) % 360;
   return (
-    <span className={`alias alias-${size}`} style={{ ['--hue' as string]: hue }} title={alias}>
-      {initial(alias)}
+    <span className={`alias alias-${size}`} style={{ ['--hue' as string]: hue }} aria-hidden>
+      <Icon name="btw" size={size === 'xs' ? 10 : 14} />
     </span>
   );
 }
 
-/** Avatar letter: "Alice" → A, "小王" → 王, legacy "AB" stays. */
-function initial(alias: string): string {
-  if (/[㐀-鿿]/.test(alias)) return alias.replace(/^[小老阿]/, '').charAt(0);
-  return alias.length <= 2 ? alias : alias.charAt(0).toUpperCase();
-}
 
 /** System notes written by the main process, shown in the UI language. */
 export function systemText(text: string): string {
@@ -82,10 +82,10 @@ export function isMainAgent(t: { taskId?: string } | undefined): boolean {
 
 type Named = { name: string; alias: string; taskId?: string; title?: string; nameSource?: 'auto' | 'user' };
 
-/** What the agent is working on ("订单接口迁移"), or its alias while it has no label yet. */
+/** The conversation title shown in workspace navigation. */
 export function labelOf(t: Named): string {
-  if (isMainAgent(t)) return tr('Main agent');
-  const name = t.name.trim() && t.name !== t.alias ? t.name : t.alias;
+  if (isMainAgent(t)) return tr('Workspace chat');
+  const name = t.name.trim() && t.name !== t.alias ? t.name.trim() : t.title?.split('\n')[0].trim() || tr('Untitled chat');
   // A stopgap label is the first message cut short ("读一下 README.md 和 …") until a model names the work:
   // the whole first line then, so a wider column shows more of it (it is cut by the width, not the text).
   if (t.nameSource !== 'user' && name.endsWith('…') && t.title) {
@@ -98,19 +98,12 @@ export function labelOf(t: Named): string {
 
 /** The whole reference, for captions, tooltips and confirmations: "订单接口迁移 · 小王", or just "小王". */
 export function displayName(t: Named): string {
-  const label = labelOf(t);
-  return isMainAgent(t) || label === t.alias ? label : `${label} · ${t.alias}`;
+  return labelOf(t);
 }
 
 /** The label first, the alias (the agent's stable handle, what you say to it) small beside it. */
 export function AgentName({ task }: { task: Named }) {
-  const label = labelOf(task);
-  return (
-    <>
-      <span className="truncate">{label}</span>
-      {!isMainAgent(task) && label !== task.alias ? <span className="alias-tag">{task.alias}</span> : null}
-    </>
-  );
+  return <span className="truncate">{labelOf(task)}</span>;
 }
 
 export function Kbd({ children }: { children: ReactNode }) {
@@ -122,10 +115,13 @@ const ICONS = {
   stop: 'M7 7h10v10H7z',
   remember: 'M7 3.5h10a1 1 0 0 1 1 1V21l-6-4-6 4V4.5a1 1 0 0 1 1-1Z M12 7.5v6 M9 10.5h6',
   send: 'M12 19V5 M6 11l6-6 6 6',
+  'interrupt-send': 'M4 8h8v8H4z M15 12h6m-3-3 3 3-3 3',
   plus: 'M12 5v14 M5 12h14',
   expand: 'M15 4h5v5 M9 20H4v-5 M20 4l-6 6 M4 20l6-6',
   collapse: 'M14 4v6h6 M10 20v-6H4 M14 10l6-6 M10 14l-6 6',
   grid: 'M4 4h7v7H4z M13 4h7v7h-7z M4 13h7v7H4z M13 13h7v7h-7z',
+  home: 'M3 10.5 12 3l9 7.5 M5 9v11h5v-6h4v6h5V9',
+  gauge: 'M4 17a8 8 0 1 1 16 0 M12 13l4-4 M12 13a2 2 0 1 0 0 4 2 2 0 0 0 0-4z',
   history: 'M3 12a9 9 0 1 0 3-6.7L3 8 M3 3v5h5 M12 7v5l3 2',
   pause: 'M8 5v14 M16 5v14',
   play: 'M7 5l12 7-12 7z',
@@ -315,11 +311,9 @@ export function SubtaskThread({
 /** Workspace warnings written by the main process, in the UI language. */
 export function warningText(text: string): string {
   const shares = /^Shares a writable directory with (.+) — edits are not isolated\.$/.exec(text);
-  // The names come joined in English; the list separator follows the language (、 in Chinese).
-  const names = (list: string) => list.split(', ').join(tr(', '));
-  if (shares) return tr('Shares a writable directory with {names} — edits are not isolated.', { names: names(shares[1]) });
+  if (shares) return tr('Edits in this shared directory affect other chats.');
   const original = /^Uses its original directory, shared with (.+) — not isolated\.$/.exec(text);
-  if (original) return tr('Uses its original directory, shared with {names} — not isolated.', { names: names(original[1]) });
+  if (original) return tr('Edits in this original directory affect other chats.');
   return text;
 }
 

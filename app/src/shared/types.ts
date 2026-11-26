@@ -4,7 +4,11 @@ import type { PermissionKind, PlanInfo, ToolCallInfo, ToolContent } from './cont
 
 export type { DiffHunk, FileDiff, PermissionKind, PlanEntry, PlanInfo, ToolCallInfo, ToolContent, ToolKind } from './content';
 
-export type AgentProvider = 'claude' | 'codex' | 'mock';
+export const NATIVE_PROVIDERS = ['claude', 'codex', 'antigravity'] as const;
+export type NativeProvider = (typeof NATIVE_PROVIDERS)[number];
+export type AgentProvider = NativeProvider | 'mock';
+/** Provider-defined identifier, validated against the selected model's catalog. */
+export type ReasoningEffort = string;
 export type AgentStatus =
   | 'idle'
   | 'starting'
@@ -85,6 +89,8 @@ export interface Task {
   mockScript?: string;
   /** Overrides settings.permissionMode for this agent. */
   permissionMode?: PermissionMode;
+  /** Null selects the model default; unset leaves provider settings alone. */
+  reasoningEffort?: ReasoningEffort | null;
   /** The agent whose conversation this one was forked from (alias at the time). */
   forkedFrom?: { taskId: string; alias: string };
   /** A failed model request that will be tried again by itself (model at capacity, rate limited…). */
@@ -399,7 +405,7 @@ export type RouteDecision =
       kind: 'create';
       proposedTitle: string;
       projectId?: string;
-      provider?: 'claude' | 'codex';
+      provider?: NativeProvider;
       reason: string;
     }
   | { kind: 'coordinator'; reason: string }
@@ -568,6 +574,7 @@ export interface ModelOption {
   id: string;
   label: string;
   description?: string;
+  reasoningEfforts?: ReasoningEffort[];
   /** The CLI's default when none is picked. */
   isDefault?: boolean;
   /** The full model id an alias stands for (Claude Code's `opus` → `claude-opus-…`), to recognise the running model. */

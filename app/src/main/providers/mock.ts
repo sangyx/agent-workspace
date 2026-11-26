@@ -28,8 +28,8 @@ interface MockHistory {
 
 /** The demo's model list (shaped like a real CLI's). */
 const MOCK_MODELS: ModelOption[] = [
-  { id: 'mock-large', label: 'Mock Large', description: 'Most capable, for complex work', isDefault: true },
-  { id: 'mock-fast', label: 'Mock Fast', description: 'Quick answers for everyday tasks' },
+  { id: 'mock-large', label: 'Mock Large', description: 'Most capable, for complex work', isDefault: true, reasoningEfforts: ['low', 'medium', 'high'] },
+  { id: 'mock-fast', label: 'Mock Fast', description: 'Quick answers for everyday tasks', reasoningEfforts: ['low', 'medium'] },
   { id: 'mock-mini', label: 'Mock Mini', description: 'Cheapest, for simple edits' },
 ];
 

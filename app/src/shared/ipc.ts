@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { NATIVE_PROVIDERS } from './types';
 
 // Every renderer -> main call goes through one of these named channels. The main
 // process validates the payload with the schema before acting on it; the preload
@@ -8,6 +9,8 @@ const id = z.string().min(1).max(200);
 /** An SSH alias from ~/.ssh/config (same rule as util/ssh HOST_RE). */
 const host = z.string().regex(/^[A-Za-z0-9_][A-Za-z0-9_.@-]{0,252}$/);
 const text = z.string().max(100_000);
+const nativeProvider = z.enum(NATIVE_PROVIDERS);
+const provider = z.enum([...NATIVE_PROVIDERS, 'mock']);
 /** A stored image (main/attachments.ts names them by their content). */
 const imageRef = z.object({ id: z.string().regex(/^[0-9a-f]{24}\.(png|jpg|gif|webp)$/), mediaType: z.string().max(50), name: z.string().max(200).optional() });
 
@@ -17,6 +20,7 @@ export const ipcSchemas = {
   'project:pickDirectory': z.object({}),
   'project:add': z.object({ rootPath: z.string().min(1).max(4096), name: z.string().max(200).optional(), host: host.optional() }),
   'project:rename': z.object({ projectId: id, name: z.string().min(1).max(200) }),
+  'project:models': z.object({ projectId: id, provider }),
   'ssh:hosts': z.object({}),
   'ssh:setEnabled': z.object({ host, enabled: z.boolean() }),
   'ssh:check': z.object({ host, quiet: z.boolean().optional() }),
@@ -28,7 +32,8 @@ export const ipcSchemas = {
   'ssh:terminal': z.object({ host }),
   'task:create': z.object({
     projectId: id,
-    provider: z.enum(['claude', 'codex', 'mock']),
+    provider,
+    model: z.string().min(1).max(200).optional(),
     /** Optional: without one (and no instruction), the first message the user sends describes the task. */
     title: z.string().max(500).optional(),
     name: z.string().max(100).optional(),
@@ -44,6 +49,7 @@ export const ipcSchemas = {
   'task:interrupt': z.object({ taskId: id }),
   'task:models': z.object({ taskId: id }),
   'task:setModel': z.object({ taskId: id, model: z.string().min(1).max(200).nullable() }),
+  'task:setReasoningEffort': z.object({ taskId: id, effort: z.string().min(1).max(80).nullable() }),
   'task:shell': z.object({ taskId: id, command: text.min(1) }),
   'memory:linkPreview': z.object({ host: z.union([z.literal('local'), z.string().regex(/^[A-Za-z0-9_][A-Za-z0-9_.@-]{0,252}$/)]) }),
   'memory:link': z.object({ host: z.union([z.literal('local'), z.string().regex(/^[A-Za-z0-9_][A-Za-z0-9_.@-]{0,252}$/)]) }),
@@ -71,7 +77,7 @@ export const ipcSchemas = {
   'task:viewed': z.object({ taskId: id }),
   'task:setPermissionMode': z.object({ taskId: id, mode: z.enum(['auto', 'edits', 'ask']) }),
   'task:remove': z.object({ taskId: id }),
-  'sessions:discover': z.object({ projectId: id, provider: z.enum(['claude', 'codex']) }),
+  'sessions:discover': z.object({ projectId: id, provider: nativeProvider }),
   'sessions:discoverAll': z.object({}),
   'session:map': z.object({ taskId: z.string() }),
   'btw:list': z.object({ taskId: z.string() }),
@@ -85,7 +91,7 @@ export const ipcSchemas = {
   'sessions:discoverHost': z.object({ host }),
   'task:importSession': z.object({
     projectId: id.optional(),
-    provider: z.enum(['claude', 'codex']),
+    provider: nativeProvider,
     nativeSessionId: id,
     cwd: z.string().min(1).max(4096),
     host: host.optional(),
@@ -110,7 +116,7 @@ export const ipcSchemas = {
       z.object({
         kind: z.literal('create'),
         projectId: id,
-        provider: z.enum(['claude', 'codex', 'mock']),
+        provider,
         title: z.string().min(1).max(500),
       }),
     ]),

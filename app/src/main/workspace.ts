@@ -14,19 +14,21 @@ import type { ModelOption,
   MemoryScope,
   MemorySyncStatus,
   NativeSessionInfo,
+  NativeProvider,
   PermissionMode,
   Project,
   ProviderCapabilities,
   RemoteHostStatus,
   RouteDecision,
   SessionRecord,
+  ReasoningEffort,
   Settings,
   Task,
   ToolCallInfo,
   TranscriptItem,
   TransientKind,
   WorkspaceSnapshot, BtwEntry, ImageRef, AgentStatus, TaskUsage, ProviderLimits, LimitWindow } from '../shared/types';
-import { accountKey } from '../shared/types';
+import { accountKey, NATIVE_PROVIDERS } from '../shared/types';
 import { clipOutput } from '../shared/content';
 import { statusGroup, type Group } from '../shared/agent-order';
 import { asksUser, clip, headlineFor, summaryFor } from './attention';
@@ -646,6 +648,7 @@ export class Workspace {
       permissionMode?: PermissionMode;
       forkedFrom?: Task['forkedFrom'];
       mockScript?: string;
+      model?: string;
     },
   ): Task {
     const d = this.store.data;
@@ -678,6 +681,7 @@ export class Workspace {
       permissionMode: o.permissionMode,
       forkedFrom: o.forkedFrom,
       mockScript: o.mockScript,
+      model: o.model,
       createdAt: now(),
       updatedAt: now(),
     };
@@ -691,6 +695,7 @@ export class Workspace {
   async createTask(args: {
     projectId: string;
     provider: AgentProvider;
+    model?: string;
     /** What the task is; empty when the user starts an agent without saying yet (its first message says). */
     title?: string;
     /** Who chose `name` (default: the user, who typed it). */
@@ -705,6 +710,9 @@ export class Workspace {
     const project = this.project(args.projectId);
     if (!this.opts.adapters[args.provider]) throw new Error(`Provider ${args.provider} is not available.`);
     if (project.host) this.requireOnHost(args.provider, project.host);
+    if (args.model && !(await this.modelsFor(args.provider, project.host)).some((model) => model.id === args.model)) {
+      throw new Error('The selected model is no longer available.');
+    }
     const ids = this.newTaskIds();
     const { taskId } = ids;
     let cwd = project.rootPath;
@@ -735,6 +743,7 @@ export class Workspace {
       cwdWarning: sharedCwdWarning,
       label: !args.name?.trim() && title ? { title: args.title ?? '', instruction: args.instruction } : undefined,
       mockScript: args.mockScript,
+      model: args.model,
     });
     this.changed();
     if (args.instruction?.trim()) {
@@ -746,7 +755,7 @@ export class Workspace {
 
   /** Shows an imported session's past conversation right away, before anything is resumed. */
   /** Shows a saved conversation before it is resumed, and returns it (undefined when it could not be read). */
-  private async previewHistory(task: Task, provider: 'claude' | 'codex', nativeSessionId: string): Promise<TranscriptItem[] | undefined> {
+  private async previewHistory(task: Task, provider: NativeProvider, nativeSessionId: string): Promise<TranscriptItem[] | undefined> {
     const adapter = this.opts.adapters[provider];
     if (!adapter?.readHistory) return undefined;
     try {
@@ -756,7 +765,8 @@ export class Workspace {
       for (const e of events) {
         if (e.type !== 'transcriptItem') continue;
         const i = items.findIndex((h) => h.id === e.itemId);
-        const item = mergeItem(i === -1 ? undefined : items[i], { id: e.itemId, taskId: task.taskId, role: e.role, text: e.text, toolLabel: e.toolLabel, toolStatus: e.toolStatus, createdAt: now() }, e.tool);
+        const images = this.historyImages(e.images, task.host);
+        const item = mergeItem(i === -1 ? undefined : items[i], { id: e.itemId, taskId: task.taskId, role: e.role, text: e.text, ...(images ? { images } : {}), toolLabel: e.toolLabel, toolStatus: e.toolStatus, createdAt: now() }, e.tool);
         if (i === -1) items.push(item);
         else items[i] = item;
       }
@@ -1173,10 +1183,12 @@ export class Workspace {
         host: task.host,
         title: task.title,
         resumeNativeSessionId: resumeId,
+        loadHistory: !!resumeId && !this.store.transcript(taskId).length,
         // The main agent gets its role and the workspace tools; it never edits code itself.
         developerInstructions: isMain ? [MAIN_AGENT_PROMPT, instructionsFor(task, injected)].filter(Boolean).join('\n\n') : instructionsFor(task, injected),
         mockScript: task.mockScript,
         model: task.model,
+        reasoningEffort: task.reasoningEffort,
         permissionMode: isMain ? 'ask' : this.permissionModeOf(task),
         tools: isMain ? workspaceTools(this) : undefined,
         skills,
@@ -1319,7 +1331,7 @@ export class Workspace {
     return new Set(this.store.data.sessions.filter((s) => here.has(s.taskId) && s.nativeSessionId).map((s) => s.nativeSessionId));
   }
 
-  async discoverSessions(projectId: string, provider: 'claude' | 'codex'): Promise<NativeSessionInfo[]> {
+  async discoverSessions(projectId: string, provider: NativeProvider): Promise<NativeSessionInfo[]> {
     const adapter = this.opts.adapters[provider];
     if (!adapter) throw new Error(`Provider ${provider} is not available.`);
     const project = this.project(projectId);
@@ -1506,7 +1518,7 @@ export class Workspace {
     const known = this.attachedSessionIds();
     const own = [this.opts.dataDir, ...(this.opts.hiddenSessionDirs ?? []), tmpdir(), '/var/folders', '/private/var/folders', '/private/tmp', '/tmp'].map((p) => resolve(p));
     const lists = await Promise.all(
-      (['claude', 'codex'] as const).map(async (p) => {
+      NATIVE_PROVIDERS.map(async (p) => {
         const adapter = this.opts.adapters[p];
         if (!adapter || !this.capabilities.find((c) => c.provider === p)?.available) return [];
         try {
@@ -1524,13 +1536,13 @@ export class Workspace {
   }
 
   /** Adopts a provider session created outside the app (historical resume, not live attach). */
-  async importSession(args: { projectId?: string; provider: 'claude' | 'codex'; nativeSessionId: string; cwd: string; host?: string; title: string }): Promise<Task> {
-    if (args.host) this.requireOnHost(args.provider, args.host);
+  async importSession(args: { projectId?: string; provider: NativeProvider; nativeSessionId: string; cwd: string; host?: string; title: string }): Promise<Task> {
     if (args.projectId) args = { ...args, host: this.project(args.projectId).host };
-    else if (args.host) {
+    if (args.host) this.requireOnHost(args.provider, args.host);
+    if (!args.projectId && args.host) {
       const inside = this.store.data.projects.find((p) => p.host === args.host && (args.cwd === p.rootPath || args.cwd.startsWith(p.rootPath + '/')));
       args = { ...args, projectId: (inside ?? (await this.addProject(args.cwd, undefined, args.host))).projectId };
-    } else {
+    } else if (!args.projectId) {
       // From the machine-wide list: the session's folder becomes (or joins) a project.
       if (!existsSync(args.cwd)) throw new Error(`The session's folder no longer exists: ${args.cwd}`);
       const inside = this.store.data.projects.find((p) => !p.host && (args.cwd === p.rootPath || args.cwd.startsWith(p.rootPath + sep)));
@@ -1681,6 +1693,7 @@ export class Workspace {
    * rather twice than missing; and only the notes that fit in those files).
    */
   private memoryGiven(task: Task, covered = new Map<string, Set<string>>()): MemoryRecord[] {
+    if (task.provider === 'antigravity') return memoryForTask(task, this.store.data.memory);
     const machine = task.host ?? LOCAL;
     const file = task.provider === 'codex' ? '~/.codex/AGENTS.md' : '~/.claude/CLAUDE.md';
     // (Worked out once per machine and file when asked for many agents at once.)
@@ -1759,6 +1772,9 @@ export class Workspace {
     try {
       const live = await this.connect(taskId);
       const busy = live.turnActive;
+      if (busy && live.session.canSteer === false && !opts.interrupt) {
+        return { ok: false, taskId, error: 'Wait for the current turn to finish or use Stop & send.' };
+      }
       // Memory saved, changed or removed since the session was given its notes reaches it with this message.
       const given = this.memoryGiven(task);
       const delta = memoryDelta(given, task.memorySeen ?? seenOf(given.filter((m) => task.injectedMemoryIds?.includes(m.id))));
@@ -1859,15 +1875,25 @@ export class Workspace {
   /** Each CLI's model list (per machine), asked once: it changes with the CLI or the account, rarely. */
   private modelLists = new Map<string, Promise<ModelOption[]>>();
 
-  /** The models this agent's CLI offers, for the picker in its header. */
+  /** Models and reasoning options offered by this chat's provider. */
   listModels(taskId: string): Promise<ModelOption[]> {
     const task = this.task(taskId);
-    const adapter = this.opts.adapters[task.provider];
+    return this.modelsFor(task.provider, task.host);
+  }
+
+  listProjectModels({ projectId, provider }: { projectId: string; provider: AgentProvider }): Promise<ModelOption[]> {
+    const { host } = this.project(projectId);
+    if (host) this.requireOnHost(provider, host);
+    return this.modelsFor(provider, host);
+  }
+
+  private modelsFor(provider: AgentProvider, host?: string): Promise<ModelOption[]> {
+    const adapter = this.opts.adapters[provider];
     if (!adapter?.listModels) return Promise.resolve([]);
-    const key = `${task.provider}|${task.host ?? ''}`;
+    const key = `${provider}|${host ?? ''}`;
     let list = this.modelLists.get(key);
     if (!list) {
-      list = adapter.listModels(task.host);
+      list = adapter.listModels(host);
       this.modelLists.set(key, list);
       list.catch(() => this.modelLists.delete(key)); // a failure is not cached
     }
@@ -1900,11 +1926,31 @@ export class Workspace {
 
   async setModel(taskId: string, model: string | undefined): Promise<void> {
     const task = this.task(taskId);
-    task.model = model;
-    if (!model) task.activeModel = undefined;
-    task.updatedAt = now();
     const live = this.live.get(taskId);
-    if (live?.session.setModel) await live.session.setModel(model);
+    const resetEffort = task.model !== model && task.reasoningEffort != null;
+    if (resetEffort) await live?.session.setReasoningEffort?.(null);
+    try {
+      await live?.session.setModel?.(model);
+      task.model = model;
+      if (!model) task.activeModel = undefined;
+      task.updatedAt = now();
+    } finally {
+      if (resetEffort) task.reasoningEffort = null;
+      this.changed();
+    }
+  }
+
+  async setReasoningEffort(taskId: string, effort: ReasoningEffort | null): Promise<void> {
+    const task = this.task(taskId);
+    if (effort !== null) {
+      const models = await this.listModels(taskId);
+      const model = task.model ?? task.activeModel;
+      const selected = model ? models.find((m) => m.id === model) ?? models.find((m) => m.resolves === model) : models.find((m) => m.isDefault);
+      if (!selected?.reasoningEfforts?.includes(effort)) throw new Error('The selected model does not offer this reasoning effort.');
+    }
+    await this.live.get(taskId)?.session.setReasoningEffort?.(effort);
+    task.reasoningEffort = effort;
+    task.updatedAt = now();
     this.changed();
   }
 
@@ -3163,7 +3209,7 @@ export class Workspace {
   }
 
   availableProviders(): AgentProvider[] {
-    return (['claude', 'codex'] as const).filter((p) => this.providerReady(p));
+    return NATIVE_PROVIDERS.filter((p) => this.providerReady(p));
   }
 
   // ---------------------------------------------------------------- file preview

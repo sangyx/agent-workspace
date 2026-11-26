@@ -76,7 +76,7 @@ const REFERENCE = /那个|刚才|刚刚|之前那|the .{1,30}? (agent|task|one)|
 /** Pointing at another agent by what it does, without its name: "那个数据库 Agent", "the backend agent". */
 const AGENT_REFERENCE = /(那个|刚才|刚刚|之前那|另一个|另外那|别的).{0,16}(agent|代理|助手|任务)|\b(the|that|other) .{1,30}? (agent|task)\b/i;
 const NEW_TASK =
-  /(开|新建|创建|起|启动)(一个|个)?(新的?)?.{0,12}(任务|agent|代理|会话|session|claude|codex)|\bnew (task|agent|session)\b|\bstart (a )?new\b|\bspin up\b|\bcreate (a )?(new )?(task|agent)\b/i;
+  /(开|新建|创建|起|启动)(一个|个)?(新的?)?.{0,12}(任务|agent|代理|会话|session|claude|codex|antigravity)|\bnew (task|agent|session)\b|\bstart (a )?new\b|\bspin up\b|\bcreate (a )?(new )?(task|agent)\b/i;
 const COORDINATOR =
   /^(status|状态)|(大家|所有|全部|哪些|有谁|谁).{0,10}(状态|在等|等待|进度)|\b(list|show) (all|the)? ?(tasks|agents|pending)\b|\bwhat('?s| is) (pending|waiting)\b|\bsummar(ize|y) (all|the workspace|pending)\b|总结一下(所有|全部)/i;
 const MEMORY = /^(记住|请记住|保存|remember|save (this|that)? ?(as|to)?)/i;
@@ -150,7 +150,7 @@ export function decideDeterministic(ctx: RouteContext): RouteDecision | null {
 
   // 2. Explicit new-task instruction.
   if (NEW_TASK.test(u)) {
-    const provider = /codex/i.test(u) ? 'codex' : /claude/i.test(u) ? 'claude' : undefined;
+    const provider = /antigravity/i.test(u) ? 'antigravity' : /codex/i.test(u) ? 'codex' : /claude/i.test(u) ? 'claude' : undefined;
     const utter = tokens(u);
     const projectHits = ctx.projects.filter((p) => [...tokens(p.name)].some((t) => utter.has(t)) || u.toLowerCase().includes(p.name.toLowerCase()));
     const projectId =

@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { createInterface } from 'node:readline';
-import type { ForkPoint, ModelOption, AttentionQuestion, NativeSessionInfo, PermissionMode, ProviderCapabilities, TransientKind } from '../../shared/types';
+import type { ForkPoint, ModelOption, AttentionQuestion, NativeSessionInfo, PermissionMode, ProviderCapabilities, ReasoningEffort, TransientKind } from '../../shared/types';
 import { transientKind } from '../retry';
 import { childEnv, findExecutable, needsShell, run } from '../util/exec';
 import { shq, sshError, sshRun, sshSpawn } from '../util/ssh';
@@ -375,7 +375,17 @@ export class CodexAdapter implements ProviderAdapter {
       return (Array.isArray(listed) ? listed : [])
         .map(rec)
         .filter((m) => !m.hidden && str(m.id))
-        .map((m) => ({ id: str(m.id), label: str(m.displayName) || str(m.id), description: str(m.description) || undefined, isDefault: m.isDefault === true }));
+        .map((m) => {
+          const levels = Array.isArray(m.supportedReasoningEfforts) ? m.supportedReasoningEfforts.map((e) => str(rec(e).reasoningEffort) || str(e)) : [];
+          return {
+            id: str(m.id),
+            resolves: str(m.model) || undefined,
+            label: str(m.displayName) || str(m.id),
+            description: str(m.description) || undefined,
+            isDefault: m.isDefault === true,
+            reasoningEfforts: [...new Set(levels.filter((level) => level && level.length <= 80))],
+          };
+        });
     } finally {
       server.kill();
     }
@@ -486,6 +496,8 @@ class CodexSession implements ProviderSession {
   private interruptRequested = false;
   private modeChanged = false;
   private modelChanged = false;
+  private activeModel?: string;
+  private defaultEfforts = new Map<string | undefined, ReasoningEffort | undefined>();
   private idleWaiters: Array<() => void> = [];
   private lastAgentText = '';
   /** Our string request id -> the server's original JSON-RPC id and request kind. */
@@ -540,7 +552,8 @@ class CodexSession implements ProviderSession {
           : { cwd: this.args.cwd, ...policy, ...instructions, ...(this.args.model ? { model: this.args.model } : {}) },
       ),
     );
-    if (str(result.model)) this.emit({ type: 'model', model: str(result.model) });
+    this.activeModel = str(result.model) || undefined;
+    if (this.activeModel) this.emit({ type: 'model', model: this.activeModel });
     const thread = rec(result.thread);
     this.threadId = str(thread.id);
     if (!this.threadId) throw new Error('Codex did not return a thread id.');
@@ -597,7 +610,9 @@ class CodexSession implements ProviderSession {
     this.interruptRequested = false;
     this.lastAgentText = '';
     this.emit({ type: 'turnStarted' });
+    const model = this.modelChanged ? this.args.model : undefined;
     try {
+      const effort = this.args.reasoningEffort === null ? await this.defaultEffort(this.server, model ?? this.activeModel) : this.args.reasoningEffort;
       const result = rec(
         await this.server.rpc('turn/start', {
           threadId: this.threadId,
@@ -605,17 +620,36 @@ class CodexSession implements ProviderSession {
           // Applies to this turn and later ones (a mode change takes effect here).
           ...(this.modeChanged && !this.args.tools?.length ? codexPolicy(this.args.permissionMode ?? 'auto') : {}),
           // A model switch, likewise from this turn on.
-          ...(this.modelChanged && this.args.model ? { model: this.args.model } : {}),
+          ...(model ? { model } : {}),
+          ...(effort !== undefined ? { effort } : {}),
         }),
       );
       this.turnId = str(rec(result.turn).id) || this.turnId;
       this.modeChanged = false;
-      if (this.modelChanged && this.args.model) this.emit({ type: 'model', model: this.args.model });
-      this.modelChanged = false;
+      if (model) {
+        this.activeModel = model;
+        if (this.args.model === model) this.modelChanged = false;
+        this.emit({ type: 'model', model });
+      }
     } catch (error) {
       this.working = false;
       throw error;
     }
+  }
+
+  private async defaultEffort(server: AppServer, id: string | undefined): Promise<ReasoningEffort | undefined> {
+    // An omitted turn override keeps the current effort. Look up the selected model's default for a reset.
+    if (!this.defaultEfforts.has(id)) {
+      const listed = rec(await server.rpc('model/list', {})).data;
+      const models = Array.isArray(listed) ? listed.map(rec) : [];
+      const model = id ? models.find((m) => m.id === id || m.model === id) : models.find((m) => m.isDefault);
+      this.defaultEfforts.set(id, str(model?.defaultReasoningEffort) || undefined);
+    }
+    return this.defaultEfforts.get(id);
+  }
+
+  async setReasoningEffort(effort: ReasoningEffort | null): Promise<void> {
+    this.args.reasoningEffort = effort;
   }
 
   async setPermissionMode(mode: PermissionMode): Promise<void> {

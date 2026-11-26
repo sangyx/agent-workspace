@@ -6,6 +6,7 @@
 // its own — that stays with the user.
 import { z } from 'zod';
 import type { AgentProvider, AttentionItem, Task } from '../shared/types';
+import { NATIVE_PROVIDERS } from '../shared/types';
 
 export interface WorkspaceTool {
   name: string;
@@ -134,7 +135,7 @@ export function workspaceTools(host: MainAgentHost): WorkspaceTool[] {
         project: z.string().describe('Project id or name from list_projects.'),
         title: z.string().min(1).describe('Short task title.'),
         instruction: z.string().min(1).describe('The first instruction for the new agent.'),
-        provider: z.enum(['claude', 'codex']).optional().describe('Defaults to the first available.'),
+        provider: z.enum(NATIVE_PROVIDERS).optional().describe('Defaults to the first available.'),
         label: z.string().optional().describe('Optional short label for the work, e.g. "Order API migration"; otherwise one is written from the instruction.'),
         images: imagesArg,
       }),
