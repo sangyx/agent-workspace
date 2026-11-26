@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import type { LimitWindow, ProviderLimits, Task } from '../../shared/types';
 import { language, t } from '../i18n';
 import { timeAgo } from '../state';
-import { Icon, PROVIDER_LABEL } from './bits';
+import { Icon, PROVIDER_LABEL, ProviderIcon } from './bits';
 
 /** 950 · 2.3K · 24.7K · 115K · 1.2M · 1M */
 export function formatTokens(n: number): string {
@@ -37,10 +37,11 @@ const EXTRA_LABELS: Record<string, string> = {
   seven_day_cowork: 'week · Cowork',
 };
 
-export function windowLabel(w: LimitWindow): string {
+export function windowLabel(w: LimitWindow, short = false): string {
   if (EXTRA_LABELS[w.key]) return t(EXTRA_LABELS[w.key]);
   if (!w.mins) return '';
-  return w.mins === 10080 ? t('week') : w.mins % 1440 === 0 ? `${w.mins / 1440}d` : w.mins % 60 === 0 ? `${w.mins / 60}h` : `${w.mins}m`;
+  // Short (the sidebar's narrow column): a week as "7d" beside "5h"; Chinese "周" is short already.
+  return w.mins === 10080 ? (short && language() !== 'zh' ? '7d' : t('week')) : w.mins % 1440 === 0 ? `${w.mins / 1440}d` : w.mins % 60 === 0 ? `${w.mins / 60}h` : `${w.mins}m`;
 }
 
 /** The plan's own windows (5 hours, a week): what a one-line summary shows. */
@@ -305,7 +306,9 @@ export function AccountLimits({ limits, now, payAsYouGo = [], rail = false }: { 
           ))
         : null}
       {open ? rows.map(({ key, l, provider, host }) => {
-        const name = `${PROVIDER_LABEL[provider]}${machines ? ` · ${host ?? t('this Mac')}` : ''}`;
+        const name = `${PROVIDER_LABEL[provider]}${machines ? ` · ${host ?? t('Local')}` : ''}`;
+        // One line each. With accounts on more than this computer, each names its machine beside its mark
+        // ("Local", or the host's whole name, cut short to the sidebar's width; the full name in the tooltip). The bars keep their columns.
         const hot = mainWindows(l.windows).some((w) => w.usedPercent >= HOT);
         const age = now - Date.parse(l.at);
         const asOf = age > 90_000 ? t('as of {time}', { time: timeAgo(l.at, now) }) : '';
@@ -317,11 +320,14 @@ export function AccountLimits({ limits, now, payAsYouGo = [], rail = false }: { 
             title={asOf ? `${t('{name} account limits', { name })} · ${asOf}` : t('{name} account limits', { name })}
             label={
               <>
-                <span className="account-name truncate">{name}</span>
+                <span className="account-name" title={name}>
+                  <ProviderIcon provider={provider} />
+                  {machines ? <span className="account-host truncate">{host ?? t('Local')}</span> : null}
+                </span>
                 <span className="account-windows">
                   {mainWindows(l.windows).map((w) => (
                     <span key={w.key} className={`lim${w.usedPercent >= HOT ? ' hot' : ''}`}>
-                      <span className="lim-k">{windowLabel(w)}</span>
+                      <span className="lim-k">{windowLabel(w, true)}</span>
                       <span className="lim-bar" aria-hidden>
                         <i style={{ width: `${Math.min(100, w.usedPercent)}%` }} />
                       </span>
@@ -333,8 +339,9 @@ export function AccountLimits({ limits, now, payAsYouGo = [], rail = false }: { 
             }
           >
             <div className="usage-pop-head">
-              {t('{name} account limits', { name })}
+              {t('{name} account limits', { name: PROVIDER_LABEL[provider] })}
               {l.plan ? <span className="muted"> · {l.plan}</span> : null}
+              {host ? <div className="usage-pop-host">{host}</div> : null}
             </div>
             {shownWindows(l.windows).map((w) => (
               <div key={w.key} className={`usage-limit${w.usedPercent >= HOT ? ' hot' : ''}`} data-testid="usage-limit">

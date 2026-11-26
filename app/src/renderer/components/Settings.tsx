@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState, type ReactNode } from 'react';
-import type { Language, MicMode, PermissionMode, ProviderCapabilities, RemoteHostStatus, WorkspaceSnapshot } from '../../shared/types';
+import { NATIVE_PROVIDERS, type Language, type MicMode, type NativeProvider, type PermissionMode, type ProviderCapabilities, type RemoteHostStatus, type WorkspaceSnapshot } from '../../shared/types';
 import { call, errorText } from '../api';
 import { t } from '../i18n';
 import { SkillsSettings } from './SkillsSettings';
@@ -14,7 +14,8 @@ export const LANGUAGES: Array<{ id: Language; label: string }> = [
   { id: 'zh', label: '中文' },
 ];
 
-const SIGN_IN: Record<string, string> = { claude: 'claude  →  /login', codex: 'codex login' };
+const SIGN_IN: Record<NativeProvider, string> = { claude: 'claude  →  /login', codex: 'codex login', antigravity: 'agy' };
+export const ANTIGRAVITY_SETUP = 'https://antigravity.google/docs/getting-started?tab=cli';
 /** On a machine without a browser: Claude prints a link to open here; Codex signs in with a device code. */
 const REMOTE_SIGN_IN: Record<string, string> = { claude: 'claude auth login', codex: 'codex login --device-auth' };
 /** How to install each CLI (also shown in the first-run guide): the official installers, no Node.js needed. */
@@ -774,7 +775,7 @@ const SECTIONS: Array<{ id: string; group: string; title: string; keywords: stri
   { id: 'guide', group: 'General', title: 'Setup guide', keywords: ['guide', 'onboarding', 'first run', 'setup', 'Open the guide'] },
   { id: 'sleep', group: 'General', title: 'Sleep', keywords: ['Keep the computer awake while agents work', 'sleep', 'awake', 'caffeinate', 'lid'] },
   { id: 'data', group: 'General', title: 'Data', keywords: ['Workspace data is stored in', 'demo', 'folder'] },
-  { id: 'agents', group: 'Connect', title: 'Coding agents', keywords: ['Claude Code', 'Codex', 'Signed in', 'login', 'Recheck', 'CLI'] },
+  { id: 'agents', group: 'Connect', title: 'Coding agents', keywords: ['Claude Code', 'Codex', 'Antigravity', 'Signed in', 'login', 'Recheck', 'CLI'] },
   { id: 'remote', group: 'Connect', title: 'Remote machines (SSH)', keywords: ['SSH', 'server', 'remote', 'host', '~/.ssh/config', 'password', 'key', 'Claude Code', 'Codex'] },
   { id: 'main', group: 'How agents work', title: 'Main agent', keywords: ['Claude Code', 'Codex', 'Off', 'coordinator', 'dispatch', 'routing'] },
   { id: 'permissions', group: 'How agents work', title: 'Permissions', keywords: ['Decide automatically', 'Allow file edits', 'Ask every time', 'auto', 'approval'] },
@@ -920,10 +921,10 @@ export function SettingsPage({ snapshot, section, onClose }: { snapshot: Workspa
       >
         <p className="muted small">
           {t(
-            'Uses the Claude Code and Codex already signed in on this computer. The app never reads their credentials.',
+            'Uses the coding agents already signed in on this computer. The app never reads their credentials.',
           )}
         </p>
-        {(['claude', 'codex'] as const).map((p) => {
+        {NATIVE_PROVIDERS.map((p) => {
           const c = snapshot.capabilities.find((x) => x.provider === p);
           const state = readiness(c);
           return (
@@ -938,7 +939,14 @@ export function SettingsPage({ snapshot, section, onClose }: { snapshot: Workspa
                   {t('Sign in once in a terminal, then click Recheck:')} <code>{SIGN_IN[p]}</code>
                 </div>
               ) : null}
-              {state === 'missing' ? <div className="small">{t('Install the {name} CLI so it is on your PATH, then click Recheck.', { name: PROVIDER_LABEL[p] })}</div> : null}
+              {state === 'missing' ? <div className="small">
+                {p === 'antigravity' ? (
+                  <>
+                    <span title={c?.detail}>{t('Install or update the Antigravity CLI (agy), then click Recheck.')}</span>{' '}
+                    <a href={ANTIGRAVITY_SETUP} target="_blank" rel="noreferrer">{t('Installation guide')}</a>
+                  </>
+                ) : t('Install the {name} CLI so it is on your PATH, then click Recheck.', { name: PROVIDER_LABEL[p] })}
+              </div> : null}
             </div>
           );
         })}

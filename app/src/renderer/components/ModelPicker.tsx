@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ModelOption, Task } from '../../shared/types';
+import type { ModelOption, ReasoningEffort, Task } from '../../shared/types';
 import { call, errorText } from '../api';
 import { t } from '../i18n';
 import { Icon, PROVIDER_LABEL } from './bits';
@@ -65,6 +65,8 @@ export function ModelPicker({ task }: { task: Task }) {
   // Only Codex keeps a running turn on its model: picked meanwhile, it applies from the next turn.
   const nextTurn = task.provider === 'codex';
   const pending = nextTurn && !!task.model && !!task.activeModel && task.model !== task.activeModel && !models?.find((o) => o.id === task.model && o.resolves === task.activeModel) && (task.status === 'running' || task.status === 'starting');
+  const selected = models?.find((m) => matches(m, task.model ?? task.activeModel)) ?? models?.find((m) => m.isDefault);
+  const efforts = selected?.reasoningEfforts ?? [];
   const pick = (model: string | null) => {
     setOpen(false);
     setError('');
@@ -82,6 +84,17 @@ export function ModelPicker({ task }: { task: Task }) {
           <div className="model-menu-head">{nextTurn ? t('Model for this agent · from its next turn') : t('Model for this agent')}</div>
           {error ? <div className="error-text small">{error}</div> : null}
           {!models && !error ? <div className="muted small">{t('Asking {name} for its models…', { name: PROVIDER_LABEL[task.provider] })}</div> : null}
+          {models ? <label className="model-effort" style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,padding:'8px 10px'}}>
+            <span>{t('Reasoning effort')}</span>
+            <select aria-label={t('Reasoning effort')} data-testid="model-effort" value={task.reasoningEffort ?? ''} disabled={!efforts.length && !task.reasoningEffort} onChange={(e) => {
+              setError('');
+              call('task:setReasoningEffort', {taskId:task.taskId, effort:(e.target.value || null) as ReasoningEffort | null}).catch((e)=>setError(errorText(e)));
+            }}>
+              <option value="">{t(efforts.length ? 'Model default' : 'Unavailable')}</option>
+              {task.reasoningEffort && !efforts.includes(task.reasoningEffort) ? <option value={task.reasoningEffort} disabled>{task.reasoningEffort}</option> : null}
+              {efforts.map((effort)=><option key={effort} value={effort}>{effort}</option>)}
+            </select>
+          </label> : null}
           {models?.map((o) => {
             const on = o.id === onId;
             return (

@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import type { NativeSessionInfo, ProviderCapabilities, WorkspaceSnapshot } from '../../shared/types';
+import { NATIVE_PROVIDERS, type NativeProvider, type NativeSessionInfo, type ProviderCapabilities, type WorkspaceSnapshot } from '../../shared/types';
 import { call, errorText } from '../api';
 import { t } from '../i18n';
 import { timeAgo } from '../state';
 import { Icon, PROVIDER_LABEL } from './bits';
-import { CopyCommand, INSTALL_COMMAND, LANGUAGES, readiness, RemoteHosts } from './Settings';
+import { ANTIGRAVITY_SETUP, CopyCommand, INSTALL_COMMAND, LANGUAGES, readiness, RemoteHosts } from './Settings';
 
 type Provider = 'claude' | 'codex';
 const DOCS: Record<Provider, string> = { claude: 'https://docs.claude.com/en/docs/claude-code/setup', codex: 'https://developers.openai.com/codex/cli' };
@@ -17,8 +17,8 @@ const DOCS: Record<Provider, string> = { claude: 'https://docs.claude.com/en/doc
 export function Onboarding({ snapshot, onSettings, now }: { snapshot: WorkspaceSnapshot; onSettings: () => void; now: number }) {
   const ob = snapshot.settings.onboarding ?? {};
   const save = (patch: Partial<NonNullable<typeof ob>>) => call('settings:update', { onboarding: { ...ob, ...patch } }).catch(() => {});
-  const cap = (p: Provider) => snapshot.capabilities.find((c) => c.provider === p);
-  const ready = (['claude', 'codex'] as const).filter((p) => readiness(cap(p)) === 'ready');
+  const cap = (p: NativeProvider) => snapshot.capabilities.find((c) => c.provider === p);
+  const ready = NATIVE_PROVIDERS.filter((p) => readiness(cap(p)) === 'ready');
   const [signingIn, setSigningIn] = useState<Partial<Record<Provider, boolean>>>({});
   // This computer's agents; another machine's count just as well (one of the two is enough).
   const local = ready.length > 0;
@@ -70,11 +70,12 @@ export function Onboarding({ snapshot, onSettings, now }: { snapshot: WorkspaceS
         </Step>
 
         <Step n={2} title={t('Connect a coding agent on this computer')} done={local} summary={ready.map((p) => PROVIDER_LABEL[p]).join(' · ')} tag={either(local)}>
-          <p className="muted small">{t('Uses Claude Code or Codex signed in on this computer; usage counts against that account.')}</p>
+          <p className="muted small">{t('Uses coding agents signed in on this computer; usage counts against the corresponding account.')}</p>
           {(['claude', 'codex'] as const).map((p) => (
             <ProviderRow key={p} provider={p} cap={cap(p)} signingIn={!!signingIn[p]} onSigningIn={(v) => setSigningIn((s) => ({ ...s, [p]: v }))} />
           ))}
-          {ready.length === 2 ? <MainAgentChoice snapshot={snapshot} /> : null}
+          <AntigravitySetup cap={cap('antigravity')} />
+          {ready.includes('claude') && ready.includes('codex') ? <MainAgentChoice snapshot={snapshot} /> : null}
         </Step>
 
         <Step n={3} title={t('Connect other machines')} done={remote || (local && !!ob.remoteSkipped)} summary={remoteReady.length ? t('{n} machines', { n: remoteReady.length }) : t('Skipped')} tag={either(remote)}>
@@ -298,6 +299,21 @@ function MainAgentChoice({ snapshot }: { snapshot: WorkspaceSnapshot }) {
   );
 }
 
+function AntigravitySetup({ cap }: { cap?: ProviderCapabilities }) {
+  const state = readiness(cap);
+  const label = state === 'ready' ? 'Ready' : state === 'signed_out' ? 'Installed, not signed in' : state === 'missing' ? 'Not installed' : 'Checking…';
+  return (
+    <div className={`ob-provider state-${state}`} data-testid="onboarding-antigravity" data-state={state}>
+      <div className="ob-provider-head">
+        <strong>{PROVIDER_LABEL.antigravity}</strong>
+        <span className="ob-provider-state">{t(label)}</span>
+      </div>
+      {state === 'signed_out' ? <p className="muted small">{t('Run agy in Terminal to sign in with Google.')}</p> : null}
+      {state === 'missing' ? <a className="link small" href={ANTIGRAVITY_SETUP} target="_blank" rel="noreferrer">{t('Installation guide')}</a> : null}
+    </div>
+  );
+}
+
 /** The user's own recent sessions, by folder; they pick what to bring in (nothing preselected). */
 function BringIn({ snapshot, now, host }: { snapshot: WorkspaceSnapshot; now: number; host?: string }) {
   const [sessions, setSessions] = useState<NativeSessionInfo[] | null>(null);
@@ -341,7 +357,7 @@ function BringIn({ snapshot, now, host }: { snapshot: WorkspaceSnapshot; now: nu
     for (const [i, s] of chosen.entries()) {
       setBusy(t('Bringing in {i} of {n}…', { i: i + 1, n: chosen.length }));
       try {
-        await call('task:importSession', { provider: s.provider as Provider, nativeSessionId: s.nativeSessionId, cwd: s.cwd, host: s.host, title: s.title.slice(0, 500) || s.nativeSessionId });
+        if (s.provider !== 'mock') await call('task:importSession', { provider: s.provider, nativeSessionId: s.nativeSessionId, cwd: s.cwd, host: s.host, title: s.title.slice(0, 500) || s.nativeSessionId });
       } catch (e) {
         setError(errorText(e));
       }

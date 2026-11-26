@@ -75,7 +75,7 @@ export function ModelPicker({ task, session }: { task: Task; session?: SessionRe
   const onId = task.model ?? (models?.find((o) => o.isDefault && (matches(o, current) || !current)) ?? models?.find((o) => matches(o, current)))?.id;
   const label = listed?.label ?? (current ? modelName(current) : t('Default model'));
   // Picked while a turn runs: the running turn keeps its model.
-  const pending = !!task.model && !!task.activeModel && task.model !== task.activeModel && !models?.find((o) => o.id === task.model && o.resolves === task.activeModel) && (task.status === 'running' || task.status === 'starting');
+  const pending = task.provider === 'codex' && !!task.model && !!task.activeModel && task.model !== task.activeModel && !models?.find((o) => o.id === task.model && o.resolves === task.activeModel) && (task.status === 'running' || task.status === 'starting');
   const selectedId = task.model ?? task.activeModel;
   const selected = selectedId ? models?.find((m) => m.id === selectedId) ?? models?.find((m) => m.resolves === selectedId) : models?.find((m) => m.isDefault);
   const efforts = selected?.reasoningEfforts ?? [];

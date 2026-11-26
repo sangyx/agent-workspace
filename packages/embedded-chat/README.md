@@ -5,8 +5,15 @@ The native engine remains `app/src/main/workspace.ts`; this package adds reusabl
 conversation rendering, a composer, native requests, a task map, side questions,
 file previews, normalized transport models, and an NDJSON engine entry.
 
-The standalone Agent Workspace Electron entry is unchanged. This is an optional
-embedding API, not a replacement for its main renderer.
+For complete native embedding, use `app/src/main/electron-host.ts` and the
+actual renderer/preload rather than this normalized ChatPage. The standalone
+Electron entry uses the same extracted native host. `app/src/renderer` is the
+upstream-based default; `app/src/renderer-chatgpt` is the optional customized
+layout. The small `renderer/embedding.ts` hook handles host navigation/theme
+commands. Both interfaces share native settings/setup dialogs, IPC and Workspace
+state. Hosts can reuse `createHostMethods({workspace, ...})` for compatibility
+without starting a second engine. This package's React surface remains optional
+for hosts which intentionally need the normalized transport API.
 
 ## Boundary
 

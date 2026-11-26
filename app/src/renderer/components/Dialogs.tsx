@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import type { AgentProvider, ForkPoint, NativeSessionInfo, Task, WorkspaceSnapshot } from '../../shared/types';
+import { NATIVE_PROVIDERS, type AgentProvider, type ForkPoint, type ModelOption, type NativeProvider, type NativeSessionInfo, type Task, type WorkspaceSnapshot } from '../../shared/types';
 import { call, errorText } from '../api';
 import { setDraftText } from '../drafts';
 import { timeAgo } from '../state';
-import { Icon, PROVIDER_LABEL, ProviderTag, shortVersion } from './bits';
+import { Icon, labelOf, PROVIDER_LABEL, ProviderTag, shortVersion } from './bits';
 import { t } from '../i18n';
 import { defaultProject, ProjectChooser } from './ProjectChooser';
 
@@ -90,11 +90,14 @@ export function ConfirmDialog({
 
 /** `onContinue`: switch to Continue a session… instead, for someone who meant to pick up an existing conversation. */
 export function NewTaskDialog({ snapshot, onClose, onCreated, onContinue }: { snapshot: WorkspaceSnapshot; onClose: () => void; onCreated: (taskId: string) => void; onContinue?: () => void }) {
-  const providers = snapshot.demo ? (['claude', 'codex', 'mock'] as const) : (['claude', 'codex'] as const);
+  const providers = snapshot.demo ? ([...NATIVE_PROVIDERS, 'mock'] as const) : NATIVE_PROVIDERS;
   const firstAvailable = providers.find((p) => snapshot.capabilities.find((c) => c.provider === p)?.available) ?? providers[0];
   // The project used most recently (most of the time the right one); the chooser lists the rest.
   const [projectId, setProjectId] = useState(() => defaultProject(snapshot));
   const [provider, setProvider] = useState<AgentProvider>(firstAvailable);
+  const [model, setModel] = useState<ModelOption | null>(null);
+  const [modelOpen, setModelOpen] = useState(false);
+  const [catalog, setCatalog] = useState<{ projectId: string; provider: AgentProvider; models?: ModelOption[]; error?: string } | null>(null);
   // No title, name or instruction here: the agent opens with its reply box focused, and its first message says what it is for.
   const [isolate, setIsolate] = useState(true);
   const [mockScript, setMockScript] = useState('ask:Should I keep backwards compatibility?');
@@ -106,13 +109,27 @@ export function NewTaskDialog({ snapshot, onClose, onCreated, onContinue }: { sn
   const capOf = (p: AgentProvider) => (project?.host ? remote?.capabilities.find((c) => c.provider === p) : snapshot.capabilities.find((c) => c.provider === p));
   const usable = (p: AgentProvider) => !!capOf(p)?.available && (!project?.host || remote?.ssh === 'ok');
   const cap = capOf(provider);
+  const providerUsable = usable(provider);
   useEffect(() => {
     if (!usable(provider)) {
       const next = providers.find(usable);
-      if (next) setProvider(next);
+      if (next) {
+        setProvider(next);
+        setModel(null);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, remote?.ssh]);
+  useEffect(() => {
+    if (!modelOpen || !projectId || !providerUsable) return;
+    let cancelled = false;
+    call('project:models', { projectId, provider }).then(
+      (models) => { if (!cancelled) setCatalog({ projectId, provider, models }); },
+      (error) => { if (!cancelled) setCatalog({ projectId, provider, error: errorText(error) }); },
+    );
+    return () => { cancelled = true; };
+  }, [modelOpen, projectId, providerUsable, provider]);
+  const modelCatalog = catalog?.projectId === projectId && catalog.provider === provider ? catalog : null;
 
   const create = async () => {
     setBusy(true);
@@ -121,6 +138,7 @@ export function NewTaskDialog({ snapshot, onClose, onCreated, onContinue }: { sn
       const t = await call('task:create', {
         projectId,
         provider,
+        model: model?.id,
         isolate: isolate && !project?.host,
         mockScript: provider === 'mock' ? mockScript : undefined,
       });
@@ -138,26 +156,44 @@ export function NewTaskDialog({ snapshot, onClose, onCreated, onContinue }: { sn
       {/* For people who meant to pick up a conversation they already have: first, before choosing anything. */}
       {onContinue ? (
         <div className="hint new-continue" data-testid="new-continue-hint">
-          {t('Continuing a conversation from Claude Code or Codex?')}{' '}
+          {t('Continuing an existing conversation?')}{' '}
           <button className="link" onClick={onContinue} data-testid="new-continue-session">
             {t('Continue a session…')}
           </button>
         </div>
       ) : null}
-      <ProjectChooser snapshot={snapshot} value={projectId} onChange={setProjectId} />
+      <ProjectChooser snapshot={snapshot} value={projectId} onChange={(id) => {
+        if (id !== projectId) setModel(null);
+        setProjectId(id);
+      }} />
       <div className="field">
-        <label>{t('Agent')}</label>
-        <div className="row">
-          {providers.map((p) => {
-            const c = capOf(p);
-            return (
-              <label key={p} className={`radio${usable(p) ? '' : ' disabled'}${provider === p ? ' selected' : ''}`} title={c?.detail}>
-                <input type="radio" name="provider" checked={provider === p} disabled={!usable(p)} onChange={() => setProvider(p)} /> {PROVIDER_LABEL[p]}
-                {c?.version ? <span className="muted small"> {shortVersion(c.version)}</span> : null}
-              </label>
-            );
-          })}
-        </div>
+        <details className="new-chat-model" data-testid="new-chat-model" onToggle={(e) => setModelOpen(e.currentTarget.open)}>
+          <summary><span>{t('Model')}</span><span className="truncate">{model?.label ?? t('Default model')}</span></summary>
+          <fieldset>
+            <legend>{t('Provider')}</legend>
+            <div className="row">
+              {providers.map((p) => {
+                const c = capOf(p);
+                return (
+                  <label key={p} className={`radio${usable(p) ? '' : ' disabled'}${provider === p ? ' selected' : ''}`} title={c?.detail}>
+                    <input type="radio" name="provider" checked={provider === p} disabled={!usable(p)} onChange={() => {
+                      setProvider(p);
+                      setModel(null);
+                    }} /> {PROVIDER_LABEL[p]}
+                    {c?.version ? <span className="muted small"> {shortVersion(c.version)}</span> : null}
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
+          <select className="input select" aria-label={t('Model')} value={model?.id ?? ''} disabled={!modelCatalog?.models?.length} onChange={(e) => {
+            setModel(modelCatalog?.models?.find((option) => option.id === e.target.value) ?? null);
+          }}>
+            <option value="">{t('Default model')}</option>
+            {modelCatalog?.models?.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+          </select>
+          {modelCatalog?.error ? <div className="error-text small" role="alert">{modelCatalog.error}</div> : null}
+        </details>
         {project?.host && remote?.ssh !== 'ok' ? (
           <div className="warn-text small">{t('{host} is not connected. Check it in Settings › Remote machines.', { host: project.host })}</div>
         ) : cap && !(cap.available && cap.auth?.loggedIn !== false) ? (
@@ -205,7 +241,7 @@ export function NewTaskDialog({ snapshot, onClose, onCreated, onContinue }: { sn
 export function ImportDialog({ snapshot, onClose, onImported }: { snapshot: WorkspaceSnapshot; onClose: () => void; onImported: (taskId: string) => void }) {
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
-  const [provider, setProvider] = useState<'all' | 'claude' | 'codex'>('all');
+  const [provider, setProvider] = useState<'all' | NativeProvider>('all');
   const [importing, setImporting] = useState('');
   const [showAutomated, setShowAutomated] = useState(() => readPref(AUTOMATED_KEY) === '1');
   // Sources: this computer plus the machines turned on in Settings › Remote machines.
@@ -249,9 +285,10 @@ export function ImportDialog({ snapshot, onClose, onImported }: { snapshot: Work
   const automatedCount = matching.filter((s) => s.automated).length;
   const shown = showAutomated ? matching : matching.filter((s) => !s.automated);
   const add = (s: NativeSessionInfo) => {
+    if (s.provider === 'mock') return;
     setImporting(s.nativeSessionId);
     setError('');
-    call('task:importSession', { provider: s.provider as 'claude' | 'codex', nativeSessionId: s.nativeSessionId, cwd: s.cwd, host: s.host, title: s.title.slice(0, 500) || s.nativeSessionId })
+    call('task:importSession', { provider: s.provider, nativeSessionId: s.nativeSessionId, cwd: s.cwd, host: s.host, title: s.title.slice(0, 500) || s.nativeSessionId })
       .then((t) => {
         onImported(t.taskId);
         onClose();
@@ -262,7 +299,7 @@ export function ImportDialog({ snapshot, onClose, onImported }: { snapshot: Work
 
   return (
     <Modal title={t('Continue an existing session')} onClose={onClose}>
-      <p className="muted small">{t('Continues a Claude Code or Codex conversation here, with its history. Close it in the terminal first.')}</p>
+      <p className="muted small">{t('Continue a saved conversation with its history. Close it in the original app or terminal first.')}</p>
       <div className="row">
         {hosts.length ? (
           <select className="input select" value={source} onChange={(e) => setSource(e.target.value)} title={t('Where the sessions are')} data-testid="session-host">
@@ -277,7 +314,7 @@ export function ImportDialog({ snapshot, onClose, onImported }: { snapshot: Work
         ) : null}
         <input className="input grow" autoFocus placeholder={t('Search by title or folder')} value={query} onChange={(e) => setQuery(e.target.value)} data-testid="session-search" />
         <div className="segmented">
-          {(['all', 'claude', 'codex'] as const).map((p) => (
+          {(['all', ...NATIVE_PROVIDERS] as const).filter((p) => p !== 'antigravity' || wanted.includes(LOCAL)).map((p) => (
             <button key={p} className={provider === p ? 'on' : ''} onClick={() => setProvider(p)}>
               {p === 'all' ? t('All') : PROVIDER_LABEL[p]}
             </button>
@@ -407,8 +444,8 @@ export function ForkDialog({ snapshot, task, onClose, onForked }: { snapshot: Wo
     }
   };
   return (
-    <Modal title={t('Fork {name}', { name: task.alias })} onClose={onClose}>
-      <div className="muted small">{t('A new agent continues from a copy; {name} stays as it is.', { name: task.alias })}</div>
+    <Modal title={t('Fork {name}', { name: labelOf(task) })} onClose={onClose}>
+      <div className="muted small">{t('A new agent continues from a copy; {name} stays as it is.', { name: labelOf(task) })}</div>
       <div className="field">
         <label>{t('Fork from')}</label>
         <div className="fork-points" data-testid="fork-points">
@@ -428,7 +465,7 @@ export function ForkDialog({ snapshot, task, onClose, onForked }: { snapshot: Wo
       <label className="check">
         <input type="checkbox" checked={isolate && !!project?.isGitRepo} disabled={!project?.isGitRepo} onChange={(e) => setIsolate(e.target.checked)} data-testid="fork-isolate" />
         {t('Run in its own git worktree')}{' '}
-        {project?.isGitRepo ? t('(with {name}’s files as they are now, uncommitted changes included)', { name: task.alias }) : t('(not a git repo — will share the folder)')}
+        {project?.isGitRepo ? t('(with {name}’s files as they are now, uncommitted changes included)', { name: labelOf(task) }) : t('(not a git repo — will share the folder)')}
       </label>
       {error ? <div className="error-text">{error}</div> : null}
       <div className="modal-foot">

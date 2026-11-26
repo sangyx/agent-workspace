@@ -3116,6 +3116,11 @@ details[open] > summary .tool-more {
 .settings-section .segmented button {
   white-space: nowrap;
 }
+/* Advanced: one width for every dropdown, so the rows line up. */
+.advanced-row .select {
+  flex: none;
+  width: 140px;
+}
 .sidebar-settings.active {
   background: var(--selected);
 }
@@ -7527,7 +7532,24 @@ button.subtask-row:hover {
   color: var(--needs);
 }
 .account-limits .account-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
   min-width: 0;
+  overflow: hidden;
+}
+.provider-icon {
+  flex: none;
+}
+.provider-icon-claude {
+  color: #d97757;
+}
+.provider-icon-codex {
+  color: var(--text);
+}
+.provider-icon-mock {
+  color: var(--text-2);
 }
 
 .account-limits-head {
@@ -7561,26 +7583,30 @@ button.subtask-row:hover {
   color: var(--needs);
 }
 
-/* An account's windows: a short bar each, its share used beside it. */
+/* An account's windows: a short bar each, its share used beside it. At the row's right end, each part
+   a fixed width, so the bars of every account line up in columns whatever the labels' lengths. */
 .account-windows {
   display: inline-flex;
-  gap: 10px;
-  /* Never wider than the sidebar: shortened rather than overflowing. */
-  min-width: 0;
-  overflow: hidden;
+  gap: 8px;
+  margin-left: auto;
+  /* Never squeezed: the machine's name on the left is what shortens. */
+  flex: none;
 }
 .lim {
-  display: inline-flex;
+  display: inline-grid;
+  grid-template-columns: minmax(16px, max-content) 20px 26px;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
 }
 .lim-k {
   color: var(--text-3);
   font-size: 10.5px;
+  text-align: right;
+  white-space: nowrap;
 }
 .lim-bar {
   position: relative;
-  width: 26px;
+  width: 20px;
   height: 4px;
   border-radius: 2px;
   background: var(--border-strong);
@@ -7593,7 +7619,6 @@ button.subtask-row:hover {
   background: var(--chart-1);
 }
 .lim-v {
-  min-width: 26px;
   text-align: right;
   font-size: 10.5px;
   color: var(--text-2);
@@ -7621,15 +7646,6 @@ button.subtask-row:hover {
   margin-left: 10px;
 }
 
-.account-metered {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 3px 6px;
-  font-size: 11.5px;
-  color: var(--text-3);
-}
 /* The New agent dialog's pointer to Continue a session, at its top. */
 .hint.new-continue {
   margin: -4px 0 12px;

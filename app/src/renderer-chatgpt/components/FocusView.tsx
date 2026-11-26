@@ -1,4 +1,4 @@
-import { Fragment, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { SideSlot } from '../side-slot';
 import { accountKey } from '../../shared/types';
@@ -6,7 +6,7 @@ import type { AttentionItem, MemoryRecord, PermissionMode, SessionRecord, Task, 
 import { PERMISSION_MODES } from './Settings';
 import { call, errorText } from '../api';
 import { AttentionView } from './AttentionView';
-import { foldsTurn, groupTranscript, PlanChecklist, PreviewContext, splitTurns, ToolCallRow, ToolGroup, turnSummary } from './Content';
+import { foldsTurn, OPEN_TURNS, groupTranscript, PlanChecklist, PreviewContext, splitTurns, ToolCallRow, ToolGroup, turnSummary } from './Content';
 import { FilePreviewPanel } from './FilePreview';
 import { AgentName, Alias, displayName, Icon, isMainAgent, PROVIDER_LABEL, StatusDot, systemText, warningText } from './bits';
 import { Markdown } from './Markdown';
@@ -210,8 +210,13 @@ export function FocusView({ snapshot, task, transcript, now, onOpen, onVoiceSlot
     ro.observe(el);
     return () => ro.disconnect();
   }, [side]);
-  // The preview column's width: dragged by the user, kept for next time.
-  const [previewWidth, setPreviewWidthState] = useState(() => Number(localStorage.getItem('amw.previewWidth')) || PREVIEW_WIDTH);
+  // The side column's width as its share of the room, so it grows and shrinks with the window like the
+  // conversation does; dragged by the user, kept for next time. A width kept by an earlier version becomes
+  // its share of the first room measured.
+  const [previewShare, setPreviewShare] = useState<number | null>(() => Number(localStorage.getItem('amw.previewShare')) || (localStorage.getItem('amw.previewWidth') ? null : PREVIEW_SHARE));
+  useEffect(() => {
+    if (previewShare === null && bodyW > 0) setPreviewShare(Number(localStorage.getItem('amw.previewWidth')) / bodyW || PREVIEW_SHARE);
+  }, [bodyW, previewShare]);
   // Maximized: the preview takes the whole conversation area until restored (Esc) or closed.
   // Maximized: the side panel (any kind) takes the whole conversation area until restored (Esc) or closed.
   const [previewMax, setPreviewMax] = useState(false);
@@ -226,8 +231,9 @@ export function FocusView({ snapshot, task, transcript, now, onOpen, onVoiceSlot
     return () => window.removeEventListener('keydown', esc, true);
   }, [previewMax]);
   const setPreviewWidth = (w: number) => {
-    setPreviewWidthState(w);
-    localStorage.setItem('amw.previewWidth', String(Math.round(w)));
+    if (!bodyW) return;
+    setPreviewShare(w / bodyW);
+    localStorage.setItem('amw.previewShare', (w / bodyW).toFixed(4));
   };
   useEffect(() => setPreviewState(restored(task.taskId)), [task.taskId]);
   // Too narrow for both (the conversation keeps 400px, a side panel 300px): the panel covers it.
@@ -239,18 +245,18 @@ export function FocusView({ snapshot, task, transcript, now, onOpen, onVoiceSlot
   }, [sideKind]);
   // Every panel alike: beside the conversation when both fit, else (or maximized) in its place.
   const covering = !!sideKind && (previewMax || narrow);
-  const shownWidth = Math.min(Math.max(previewWidth, PREVIEW_MIN), previewMaxWidth(bodyW));
+  const shownWidth = Math.min(Math.max((previewShare ?? PREVIEW_SHARE) * bodyW, PREVIEW_MIN), previewMaxWidth(bodyW));
   const [forking, setForking] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [removing, setRemoving] = useState(false);
-  // Conversations on this Mac can be forked once saved, when their provider supports it.
+  // Conversations on this computer can be forked once saved, when their provider supports it.
   const canFork = !isMainAgent(task) && !task.host && !!snapshot.capabilities.find((c) => c.provider === task.provider)?.fork && !!session?.nativeSessionId;
   const [error, setError] = useState('');
   const run = (fn: () => Promise<unknown>) => {
     setError('');
     fn().catch((e) => setError(errorText(e)));
   };
-  // "Open in default app" only for files on this Mac.
+  // "Open in default app" only for files on this computer.
   const openExternal = task.host ? undefined : (path: string) => run(() => call('file:open', { taskId: task.taskId, path }));
 
   // A file previewed while it has changes in the latest turn can show them (File / Changes).
@@ -552,6 +558,8 @@ export function FocusView({ snapshot, task, transcript, now, onOpen, onVoiceSlot
   );
 }
 
+/** The side column's default share of the room it and the conversation split (about 460px in a laptop window). */
+const PREVIEW_SHARE = 0.4;
 const PREVIEW_WIDTH = 460;
 /** The preview never narrower than this; the conversation keeps at least CONVERSATION_MIN. */
 const PREVIEW_MIN = 300;
@@ -583,7 +591,7 @@ function PanelResizer({ width, room, onChange }: { width: number; room: number; 
       aria-label={t('Resize the side column')}
       title={t('Drag to resize; double-click to reset')}
       data-testid="panel-resizer"
-      onDoubleClick={() => onChange(PREVIEW_WIDTH)}
+      onDoubleClick={() => onChange(room ? room * PREVIEW_SHARE : PREVIEW_WIDTH)}
       onPointerDown={(e) => {
         e.preventDefault();
         const startX = e.clientX;
@@ -850,7 +858,9 @@ function TaskName({ task, tasks, onFork, onControls }: { task: Task; tasks: Task
   );
 }
 
-function Transcript({ items, main, task, snapshot }: { items: TranscriptItem[]; main?: boolean; task: Task; snapshot: WorkspaceSnapshot }) {
+// Memoized: resizing the window (or the side column) re-renders the view on every frame; the
+// conversation itself only when what it shows changes.
+const Transcript = memo(function Transcript({ items, main, task, snapshot }: { items: TranscriptItem[]; main?: boolean; task: Task; snapshot: WorkspaceSnapshot }) {
   const ref = useRef<HTMLDivElement>(null);
   // "Keep as memory" on one of the user's messages: the dialog, and the right-click menu that opens it.
   const [remember, setRemember] = useState<string | null>(null);
@@ -1042,7 +1052,7 @@ function Transcript({ items, main, task, snapshot }: { items: TranscriptItem[]; 
     </div>
     </>
   );
-}
+});
 
 function WorkActivity({ label, detail, children }: { label: string; detail: string; children: ReactNode }) {
   return (
