@@ -559,7 +559,7 @@ export function RemoteHosts({ snapshot, autoRecheck = false }: { snapshot: Works
   // While a connected machine still lacks an agent (installing or signing in over there), look again
   // now and then so it ticks off by itself (first-run guide).
   const incomplete = snapshot.remoteHosts
-    .filter((h) => h.ssh === 'ok' && !(['claude', 'codex'] as const).some((p) => readiness(h.capabilities.find((x) => x.provider === p)) === 'ready'))
+    .filter((h) => h.ssh === 'ok' && !NATIVE_PROVIDERS.some((p) => readiness(h.capabilities.find((x) => x.provider === p)) === 'ready'))
     .map((h) => h.host)
     .join(',');
   useEffect(() => {
@@ -609,10 +609,10 @@ export function RemoteHosts({ snapshot, autoRecheck = false }: { snapshot: Works
         const host = status.host;
         const state = SSH_STATE[status.ssh];
         const addr = address(hosts.find((e) => e.host === host));
-        const signedOut = status.ssh === 'ok' ? (['claude', 'codex'] as const).filter((p) => readiness(status.capabilities.find((x) => x.provider === p)) === 'signed_out') : [];
-        const missing = status.ssh === 'ok' ? (['claude', 'codex'] as const).filter((p) => readiness(status.capabilities.find((x) => x.provider === p)) === 'missing') : [];
+        const signedOut = status.ssh === 'ok' ? NATIVE_PROVIDERS.filter((p) => readiness(status.capabilities.find((x) => x.provider === p)) === 'signed_out') : [];
+        const missing = status.ssh === 'ok' ? NATIVE_PROVIDERS.filter((p) => readiness(status.capabilities.find((x) => x.provider === p)) === 'missing') : [];
         // Nothing usable there yet: say how to install, and offer a terminal on that machine.
-        const noAgent = status.ssh === 'ok' && !(['claude', 'codex'] as const).some((p) => readiness(status.capabilities.find((x) => x.provider === p)) === 'ready');
+        const noAgent = status.ssh === 'ok' && !NATIVE_PROVIDERS.some((p) => readiness(status.capabilities.find((x) => x.provider === p)) === 'ready');
         return (
           <div key={host} className="settings-row" data-testid={`host-${host}`}>
             <div className="settings-row-main">
@@ -620,7 +620,7 @@ export function RemoteHosts({ snapshot, autoRecheck = false }: { snapshot: Works
               {addr ? <span className="muted small mono host-addr">{addr}</span> : null}
               <span className="host-actions">
                 {status.ssh === 'ok' ? (
-                  (['claude', 'codex'] as const).map((p) => {
+                  NATIVE_PROVIDERS.map((p) => {
                     const c = status.capabilities.find((x) => x.provider === p);
                     const r = readiness(c);
                     const detail = r === 'ready' ? (c?.auth?.method ? t('Signed in · {method}', { method: c.auth.method }) : t('Ready')) : r === 'signed_out' ? t('Not signed in') : t('Not installed');
@@ -656,10 +656,11 @@ export function RemoteHosts({ snapshot, autoRecheck = false }: { snapshot: Works
                 </button>
               </span>
             </div>
-            {signedOut.map((p) => (
+            {signedOut.filter((p) => p !== 'antigravity').map((p) => (
               <HostAgentSetup key={p} host={host} provider={p} state="signed_out" />
             ))}
-            {noAgent ? missing.map((p) => <HostAgentSetup key={p} host={host} provider={p} state="missing" />) : null}
+            {noAgent ? missing.filter((p) => p !== 'antigravity').map((p) => <HostAgentSetup key={p} host={host} provider={p} state="missing" />) : null}
+            {signedOut.includes('antigravity') ? <div className="muted small">{t('Sign in to Antigravity by running agy on {host}, then click Recheck.', { host })}</div> : null}
             {state.hint ? <div className="muted small">{t(state.hint)}</div> : null}
             {status.ssh === 'unreachable' && status.error ? <div className="muted small">{status.error}</div> : null}
             {error?.host === host ? <div className="error-text small">{error.text}</div> : null}

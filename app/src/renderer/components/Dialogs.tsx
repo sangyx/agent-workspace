@@ -326,7 +326,7 @@ export function ImportDialog({ snapshot, onClose, onImported }: { snapshot: Work
         ) : null}
         <input className="input grow" autoFocus placeholder={t('Search title, folder, provider or date')} value={query} onChange={(e) => setQuery(e.target.value)} data-testid="session-search" />
         <div className="segmented">
-          {(['all', ...NATIVE_PROVIDERS] as const).filter((p) => p !== 'antigravity' || wanted.includes(LOCAL)).map((p) => (
+          {(['all', ...NATIVE_PROVIDERS] as const).map((p) => (
             <button key={p} className={provider === p ? 'on' : ''} onClick={() => setProvider(p)}>
               {p === 'all' ? t('All') : PROVIDER_LABEL[p]}
             </button>

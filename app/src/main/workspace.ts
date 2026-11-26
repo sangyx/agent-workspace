@@ -470,7 +470,7 @@ export class Workspace {
     const cap = status?.capabilities.find((c) => c.provider === provider);
     if (status && status.ssh !== 'ok' && status.ssh !== 'checking') throw new Error(status.error ?? `Cannot reach ${host}.`);
     if (cap && !cap.available) throw new Error(cap.detail ?? `${provider} is not installed on ${host}.`);
-    if (cap?.auth?.loggedIn === false) throw new Error(`${provider === 'claude' ? 'Claude Code' : 'Codex'} on ${host} is not signed in. Sign in there once (${provider === 'claude' ? 'claude' : 'codex login'}), then recheck.`);
+    if (cap?.auth?.loggedIn === false) throw new Error(`${provider === 'claude' ? 'Claude Code' : provider === 'antigravity' ? 'Antigravity' : 'Codex'} on ${host} is not signed in. Sign in there once (${provider === 'claude' ? 'claude' : provider === 'antigravity' ? 'agy' : 'codex login'}), then recheck.`);
   }
 
   async shutdown(): Promise<void> {

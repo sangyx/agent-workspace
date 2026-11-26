@@ -1138,6 +1138,7 @@ export const zh: Record<string, string> = {
   'Uses the coding agents already signed in on this computer. The app never reads their credentials.': '使用已在此电脑登录的编程代理。应用不会读取其登录凭据。',
   'Attached context': '附加上下文',
   'Research projects': '研究项目',
+  'Sign in to Antigravity by running agy on {host}, then click Recheck.': '请在 {host} 上运行 agy 登录 Antigravity，然后点击重新检查。',
   'Other projects': '其他项目',
   'Import into project': '导入到项目',
   'Use the session’s original folder': '使用会话原来的文件夹',

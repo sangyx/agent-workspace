@@ -1,12 +1,16 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { expect, it, vi } from 'vitest';
 import { AntigravityAdapter } from '../../src/main/providers/antigravity';
 import type { ProviderEvent } from '../../src/main/providers/types';
+import { detachedSpawn } from '../../src/main/util/detached';
+vi.mock('../../src/main/util/detached', () => ({
+  detachedSpawn: vi.fn((runner, command) => runner.spawn(command)),
+}));
 
 // Native ACP boundary: a fake CLI exercises the model catalog, streaming, and a wire-level approval.
-it.skipIf(process.platform === 'win32')('routes Antigravity ACP events and resumes the same conversation', async () => {
+it.skipIf(process.platform === 'win32').each([undefined, 'mock-host'])('routes Antigravity ACP events and resumes the same conversation on %s', async (host) => {
   const cwd = mkdtempSync(join(tmpdir(), 'amw-agy-test-'));
   const executable = join(cwd, 'agy');
   writeFileSync(executable, `#!/usr/bin/env node
@@ -65,14 +69,33 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   }
 });
 `, { mode: 0o755 });
+  const sshLog = join(cwd, 'ssh-calls.jsonl');
+  writeFileSync(join(cwd, 'ssh'), `#!/usr/bin/env node
+const fs=require('node:fs');
+const command=process.argv.at(-1);
+fs.appendFileSync(${JSON.stringify(sshLog)},JSON.stringify(command)+'\\n');
+if(command.includes('command -v agy')) { console.log('/remote/bin/agy'); process.exit(0); }
+if(command.includes('mktemp -d')) {
+  console.log('__AMW_MODELS__'+fs.mkdtempSync('/tmp/amw-antigravity-models.')); process.exit(0);
+}
+if(command.includes('rm -rf')) {
+  const dir=command.match(/\\/tmp\\/amw-antigravity-models\\.[A-Za-z0-9]+/)?.[0];
+  if(!dir) process.exit(2);
+  fs.rmSync(dir,{recursive:true,force:true}); process.exit(0);
+}
+if(!command.includes('exec agy acp --sandbox')) process.exit(2);
+console.log('Synthetic login banner — not an ACP message');
+process.chdir(${JSON.stringify(cwd)});
+require(${JSON.stringify(executable)});
+`, { mode: 0o755 });
   vi.stubEnv('PATH', cwd + delimiter + process.env.PATH);
   const adapter = new AntigravityAdapter();
   const events: ProviderEvent[] = [];
-  const session = adapter.createSession({ cwd, title: 'Probe', permissionMode: 'ask', reasoningEffort: 'high' }, (event) => events.push(event));
+  const session = adapter.createSession({ cwd, host, title: 'Probe', permissionMode: 'ask', reasoningEffort: 'high' }, (event) => events.push(event));
   try {
-    expect(await adapter.capabilities()).toMatchObject({ provider: 'antigravity', available: true, auth: { loggedIn: true } });
-    expect(await adapter.listModels()).toMatchObject([{ id: 'flash', label: 'Flash', reasoningEfforts: ['low', 'high'], isDefault: true }]);
-    expect(await adapter.discoverSessions({ cwd })).toMatchObject([{ nativeSessionId: 'conversation-1', title: 'Saved chat' }]);
+    expect(await (host ? adapter.hostCapabilities(host) : adapter.capabilities())).toMatchObject({ provider: 'antigravity', available: true, auth: { loggedIn: true } });
+    expect(await adapter.listModels(host)).toMatchObject([{ id: 'flash', label: 'Flash', reasoningEfforts: ['low', 'high'], isDefault: true }]);
+    expect(await adapter.discoverSessions({ cwd, host })).toMatchObject([{ nativeSessionId: 'conversation-1', title: 'Saved chat', host }]);
     await session.start();
     expect(session.nativeSessionId()).toBe('conversation-1');
     expect(await session.send('Original prompt')).toBe('turn');
@@ -89,17 +112,24 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     expect(events.at(-1)).toMatchObject({ type: 'turnCompleted', status: 'interrupted' });
     await session.close();
 
-    const history = await adapter.readHistory('conversation-1', cwd);
+    const history = await adapter.readHistory('conversation-1', cwd, host);
     expect(history).toMatchObject([
       { role: 'user', text: 'Original prompt', history: true },
       { role: 'assistant', text: 'Saved reply', history: true },
     ]);
-    const resumed = adapter.createSession({ cwd, title: 'Resume', resumeNativeSessionId: 'conversation-1' }, () => {});
+    const resumed = adapter.createSession({ cwd, host, title: 'Resume', resumeNativeSessionId: 'conversation-1' }, () => {});
     try {
       await resumed.start();
       expect(resumed.nativeSessionId()).toBe('conversation-1');
     } finally {
       await resumed.close();
+    }
+    if (host) {
+      const commands = readFileSync(sshLog, 'utf8');
+      expect(commands).toContain('exec agy acp --sandbox');
+      expect(commands).not.toContain('dangerously-skip-permissions');
+      expect(vi.mocked(detachedSpawn)).toHaveBeenCalled();
+      expect(vi.mocked(detachedSpawn).mock.calls.at(-1)?.[1]).toContain('cd --');
     }
   } finally {
     await session.close();

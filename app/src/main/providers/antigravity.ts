@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { Readable, Writable } from 'node:stream';
+import { createInterface } from 'node:readline';
 import { client, methods, ndJsonStream, PROTOCOL_VERSION, RequestError } from '@agentclientprotocol/sdk/unstable';
 import type {
   ContentBlock, InitializeResponse, LoadSessionResponse, NewSessionResponse, RequestPermissionRequest, RequestPermissionResponse,
@@ -12,9 +13,11 @@ import type {
 import { clipOutput, makeDiff, snippetHunks } from '../../shared/content';
 import type { ModelOption, NativeSessionInfo, PermissionMode, ProviderCapabilities, ToolContent, ToolStatus } from '../../shared/types';
 import { transientKind } from '../retry';
-import { childEnv, findExecutable, run } from '../util/exec';
+import { childEnv, findExecutable } from '../util/exec';
 import type { ApprovalResponse, Delivery, HistoryImage, ImageInput, ProviderAdapter, ProviderEvent, ProviderSession, StartArgs } from './types';
 import { cleanUserText } from './user-text';
+import { shq, sshError, sshRun, sshRunner, sshSpawn } from '../util/ssh';
+import { detachedSpawn } from '../util/detached';
 
 const agent = methods.agent;
 const timeout = (ms = 12_000) => ({ cancellationSignal: AbortSignal.timeout(ms), stopWaitingOnCancel: true });
@@ -23,16 +26,29 @@ const authRequired = (error: unknown) => error instanceof RequestError && error.
 const modeIds: Record<PermissionMode, string> = { ask: 'default', edits: 'accept-edits', auto: 'auto' };
 const workspaceContext = /^<agent-workspace-context>[\s\S]*?<\/agent-workspace-context>\s*/;
 
-function openClient(executable: string, cwd: string, handlers?: {
+function openClient(executable: string, cwd: string | undefined, handlers?: {
   update: (notification: SessionNotification) => void;
   permission: (request: RequestPermissionRequest, signal: AbortSignal) => Promise<RequestPermissionResponse>;
-}) {
-  const child = spawn(executable, ['acp', '--sandbox'], { cwd, env: childEnv(), stdio: ['pipe', 'pipe', 'ignore'] });
+}, host?: string, durable = false) {
+  const command = `cd -- ${cwd ? shq(cwd) : '"$HOME"'} && exec agy acp --sandbox`;
+  const child = host
+    ? durable ? detachedSpawn(sshRunner(host), command) : sshSpawn(host, command)
+    : spawn(executable, ['acp', '--sandbox'], { cwd, env: childEnv(), stdio: ['pipe', 'pipe', 'ignore'] });
+  // Login banners are not ACP messages. Keep only JSON-RPC lines, as the Codex transport does.
+  const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
+  const stdout = Readable.from((async function* () {
+    for await (const line of lines) {
+      try {
+        if (JSON.parse(line)?.jsonrpc === '2.0') yield Buffer.from(line + '\n');
+      } catch { /* A login banner, never sent to the ACP parser. */ }
+    }
+  })());
+  child.stderr?.resume();
   const app = client({ name: 'agent-workspace' })
     .onNotification(methods.client.session.update, ({ params }) => handlers?.update(params))
     .onRequest(methods.client.session.requestPermission, ({ params, signal }) => handlers?.permission(params, signal) ?? cancelled);
   const output = Writable.toWeb(child.stdin);
-  const input = Readable.toWeb(child.stdout) as unknown as ReadableStream<Uint8Array>;
+  const input = Readable.toWeb(stdout) as unknown as ReadableStream<Uint8Array>;
   const connection = app.connect(ndJsonStream(output, input));
   const rpc = connection.agent;
   child.once('error', () => connection.close());
@@ -40,9 +56,11 @@ function openClient(executable: string, cwd: string, handlers?: {
   return {
     rpc,
     closed: connection.closed,
-    initialize: () => rpc.request<InitializeResponse>(agent.initialize, { protocolVersion: PROTOCOL_VERSION, clientCapabilities: {}, clientInfo: { name: 'agent-workspace' } }, timeout()),
+    initialize: () => rpc.request<InitializeResponse>(agent.initialize, { protocolVersion: PROTOCOL_VERSION, clientCapabilities: {}, clientInfo: { name: 'agent-workspace' } }, timeout(host ? 25_000 : 12_000)),
     close: () => {
       connection.close();
+      lines.close();
+      stdout.destroy();
       child.kill();
     },
   };
@@ -72,24 +90,39 @@ function catalog(session: SessionOptions): ModelOption[] {
 
 export class AntigravityAdapter implements ProviderAdapter {
   readonly provider = 'antigravity' as const;
-  private checking?: Promise<ProviderCapabilities>;
+  readonly remote = true;
+  private checking = new Map<string, Promise<ProviderCapabilities>>();
 
   capabilities(): Promise<ProviderCapabilities> {
-    return this.checking ??= this.detect().finally(() => { this.checking = undefined; });
+    return this.check();
+  }
+  hostCapabilities(host: string): Promise<ProviderCapabilities> { return this.check(host); }
+  private check(host?: string): Promise<ProviderCapabilities> {
+    const key = host ?? '';
+    const pending = this.checking.get(key);
+    if (pending) return pending;
+    const promise = this.detect(host).finally(() => this.checking.delete(key));
+    this.checking.set(key, promise);
+    return promise;
   }
 
-  private async detect(): Promise<ProviderCapabilities> {
+  private async detect(host?: string): Promise<ProviderCapabilities> {
     const base: ProviderCapabilities = {
       provider: this.provider, available: false, createSession: true, resumeHistorical: true, importHistory: true,
       attachExternalRunning: false, readOnlyMonitor: false, structuredApprovals: true, structuredQuestions: false,
     };
-    const exe = findExecutable('agy');
+    const exe = host ? 'agy' : findExecutable('agy');
+    if (host) {
+      const found = await sshRun(host, 'command -v agy >/dev/null', 15_000);
+      if (found.code === 255) throw new Error(sshError(host, found.stderr));
+      if (found.code !== 0) return { ...base, detail: `Antigravity CLI (agy) not found on ${host} (in its login shell's PATH).` };
+    }
     if (!exe) return { ...base, detail: 'Antigravity CLI (agy) not found on PATH.' };
-    const transport = openClient(exe, homedir());
+    const transport = openClient(exe, host ? undefined : homedir(), undefined, host);
     try {
       const init = await transport.initialize();
       if (init.protocolVersion !== PROTOCOL_VERSION) throw new Error('Antigravity uses an unsupported ACP protocol version.');
-      const installed = { ...base, available: true, version: init.agentInfo?.version, detail: `Antigravity CLI → ${exe}` };
+      const installed = { ...base, available: true, version: init.agentInfo?.version, detail: host ? `Antigravity ACP over SSH on ${host}, with the login there.` : `Antigravity CLI → ${exe}` };
       try {
         await transport.rpc.request(agent.session.list, {}, timeout());
         return { ...installed, auth: { loggedIn: true } };
@@ -97,15 +130,14 @@ export class AntigravityAdapter implements ProviderAdapter {
         return { ...installed, ...(authRequired(error) ? { auth: { loggedIn: false } } : { detail: String(error) }) };
       }
     } catch (error) {
-      const version = await run(exe, ['--version'], { timeoutMs: 3000 });
-      return { ...base, version: version.stdout.trim() || undefined, detail: `Antigravity ACP unavailable: ${String(error)}` };
+      return { ...base, detail: `Antigravity ACP unavailable${host ? ` on ${host}` : ''}: ${String(error)}` };
     } finally {
       transport.close();
     }
   }
 
-  async discoverSessions({ cwd, limit = 60 }: { cwd?: string; limit?: number }): Promise<NativeSessionInfo[]> {
-    const transport = openClient(requireAgy(), cwd ?? homedir());
+  async discoverSessions({ cwd, limit = 60, host }: { cwd?: string; limit?: number; host?: string }): Promise<NativeSessionInfo[]> {
+    const transport = openClient(host ? 'agy' : requireAgy(), cwd ?? (host ? undefined : homedir()), undefined, host);
     try {
       await transport.initialize();
       const result: NativeSessionInfo[] = [];
@@ -115,7 +147,7 @@ export class AntigravityAdapter implements ProviderAdapter {
         const page = await transport.rpc.request(agent.session.list, { cwd, cursor }, timeout());
         for (const s of page.sessions) {
           if (s.archived || (cwd && resolve(s.cwd) !== resolve(cwd))) continue;
-          result.push({ provider: this.provider, nativeSessionId: s.sessionId, cwd: s.cwd, title: s.title || s.sessionId, updatedAt: s.updatedAt ?? undefined });
+          result.push({ provider: this.provider, nativeSessionId: s.sessionId, cwd: s.cwd, host, title: s.title || s.sessionId, updatedAt: s.updatedAt ?? undefined });
         }
         cursor = page.nextCursor ?? undefined;
         if (!cursor || seen.has(cursor)) break;
@@ -127,10 +159,15 @@ export class AntigravityAdapter implements ProviderAdapter {
     }
   }
 
-  async listModels(): Promise<ModelOption[]> {
-    const exe = requireAgy();
-    const cwd = await mkdtemp(join(tmpdir(), 'amw-antigravity-models-'));
-    const transport = openClient(exe, cwd);
+  async listModels(host?: string): Promise<ModelOption[]> {
+    const exe = host ? 'agy' : requireAgy();
+    let cwd: string;
+    if (host) {
+      const created = await sshRun(host, 'd=$(mktemp -d /tmp/amw-antigravity-models.XXXXXXXX) || exit; printf "__AMW_MODELS__%s\\n" "$d"');
+      cwd = /__AMW_MODELS__(\/tmp\/amw-antigravity-models\.[A-Za-z0-9]+)/.exec(created.stdout)?.[1] ?? '';
+      if (created.code !== 0 || !cwd) throw new Error(`Could not prepare an Antigravity model query on ${host}.`);
+    } else cwd = await mkdtemp(join(tmpdir(), 'amw-antigravity-models-'));
+    const transport = openClient(exe, cwd, undefined, host);
     try {
       await transport.initialize();
       const session = await transport.rpc.request<NewSessionResponse>(agent.session.new, { cwd, mcpServers: [] }, timeout());
@@ -138,13 +175,14 @@ export class AntigravityAdapter implements ProviderAdapter {
       return catalog(session);
     } finally {
       transport.close();
-      await rm(cwd, { recursive: true, force: true });
+      if (host) await sshRun(host, `rm -rf -- ${shq(cwd)}`);
+      else await rm(cwd, { recursive: true, force: true });
     }
   }
 
-  async readHistory(nativeSessionId: string, cwd: string): Promise<ProviderEvent[]> {
+  async readHistory(nativeSessionId: string, cwd: string, host?: string): Promise<ProviderEvent[]> {
     const events: ProviderEvent[] = [];
-    const session = new AntigravitySession({ cwd, resumeNativeSessionId: nativeSessionId, title: '' }, (e) => events.push(e));
+    const session = new AntigravitySession({ cwd, host, resumeNativeSessionId: nativeSessionId, title: '' }, (e) => events.push(e));
     try {
       await session.start(true);
       return events;
@@ -154,7 +192,7 @@ export class AntigravityAdapter implements ProviderAdapter {
   }
 
   createSession(args: StartArgs, emit: (event: ProviderEvent) => void): ProviderSession {
-    return new AntigravitySession(args, emit, async () => (await this.listModels()).find((model) => model.isDefault)?.id);
+    return new AntigravitySession(args, emit, async () => (await this.listModels(args.host)).find((model) => model.isDefault)?.id);
   }
 }
 
@@ -196,13 +234,12 @@ class AntigravitySession implements ProviderSession {
   nativeSessionId() { return this.id; }
 
   async start(historyOnly = false): Promise<void> {
-    if (this.args.host) throw new Error('Antigravity is available for local projects.');
-    this.transport = openClient(requireAgy(), this.args.cwd, {
+    this.transport = openClient(this.args.host ? 'agy' : requireAgy(), this.args.cwd, {
       update: ({ sessionId, update }) => {
         if (this.id === sessionId || (!this.id && !this.closed)) this.onUpdate(update);
       },
       permission: (request, signal) => this.requestPermission(request, signal),
-    });
+    }, this.args.host, !historyOnly);
     const { rpc } = this.transport;
     try {
       const init = await this.transport.initialize();
@@ -241,7 +278,7 @@ class AntigravitySession implements ProviderSession {
       });
     } catch (error) {
       await this.close();
-      if (authRequired(error)) throw new Error('Sign in to Antigravity by running agy in Terminal, then try again.');
+      if (authRequired(error)) throw new Error(`Sign in to Antigravity by running agy${this.args.host ? ` on ${this.args.host}` : ' in Terminal'}, then try again.`);
       throw error;
     }
   }

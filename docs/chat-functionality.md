@@ -9,6 +9,15 @@ permission modes (`auto`, `edits`, `ask`), local/OpenAI speech recognition, side
 questions, local/SSH file previews, persistent project expansion and context
 presentation that folds injected memory/history without changing provider data.
 
+Antigravity also supports SSH hosts. Remote discovery, saved history, model and
+reasoning catalogs, and continuation use the `agy` installed and signed in on
+that machine. Its login-shell PATH (including `~/.local/bin`) is used; local
+Antigravity credentials or history are not substituted. Active remote ACP
+sessions use the existing detached SSH transport, while metadata queries use
+short-lived connections. Native sandbox and approval handling stay enabled.
+Antigravity appears in the remote import filter and host readiness badges;
+interactive installation/sign-in remains available through that host's terminal.
+
 ## Imports
 
 - Pick an existing destination project, or keep the original folder association.
