@@ -335,12 +335,9 @@ export function SubtaskThread({
   );
 }
 
-/** Workspace warnings written by the main process, in the UI language. */
+/** Shared-folder metadata stays in the runtime; it is not a chat notice. */
 export function warningText(text: string): string {
-  const shares = /^Shares a writable directory with (.+) — edits are not isolated\.$/.exec(text);
-  if (shares) return tr('Edits in this shared directory affect other chats.');
-  const original = /^Uses its original directory, shared with (.+) — not isolated\.$/.exec(text);
-  if (original) return tr('Edits in this original directory affect other chats.');
+  if (/^Shares a writable directory with .+ — edits are not isolated\.$/.test(text) || /^Uses its original directory, shared with .+ — not isolated\.$/.test(text)) return '';
   return text;
 }
 

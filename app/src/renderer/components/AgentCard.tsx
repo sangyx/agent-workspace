@@ -46,6 +46,7 @@ export function AgentCard({
   onOpenSubtask: (taskId: string, subtaskId: string) => void;
   now: number;
 }) {
+  const directoryWarning = warningText(task.sharedCwdWarning || '');
   // The same unsent message as on the agent's page: started here, finished there, or the other way round.
   const [draft, setDraft] = useDraft(task.taskId);
   // Sub-agents unfold inside the card, above its activity; folded by default.
@@ -126,9 +127,9 @@ export function AgentCard({
 
       <div className="tile-body">
         {subOpen && liveSubtasks(task)?.length ? <SubtaskThread subtasks={liveSubtasks(task)!} now={now} max={4} heading onOpen={(id) => onOpenSubtask(task.taskId, id)} /> : null}
-        {task.sharedCwdWarning ? (
+        {directoryWarning ? (
           <div className="warn-text">
-            <Icon name="alert" size={12} /> {warningText(task.sharedCwdWarning)}
+            <Icon name="alert" size={12} /> {directoryWarning}
           </div>
         ) : null}
         {urgent.map((item) => (

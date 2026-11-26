@@ -340,14 +340,9 @@ export function SubtaskThread({
   );
 }
 
-/** Workspace warnings written by the main process, in the UI language. */
+/** Shared-folder metadata stays in the runtime; it is not a chat notice. */
 export function warningText(text: string): string {
-  const shares = /^Shares a writable directory with (.+) — edits are not isolated\.$/.exec(text);
-  // The names come joined in English; the list separator follows the language (、 in Chinese).
-  const names = (list: string) => list.split(', ').join(tr(', '));
-  if (shares) return tr('Shares a writable directory with {names} — edits are not isolated.', { names: names(shares[1]) });
-  const original = /^Uses its original directory, shared with (.+) — not isolated\.$/.exec(text);
-  if (original) return tr('Uses its original directory, shared with {names} — not isolated.', { names: names(original[1]) });
+  if (/^Shares a writable directory with .+ — edits are not isolated\.$/.test(text) || /^Uses its original directory, shared with .+ — not isolated\.$/.test(text)) return '';
   return text;
 }
 

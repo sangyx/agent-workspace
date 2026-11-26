@@ -38,6 +38,7 @@ import { savedPreview, savePreview, type PreviewState } from '../preview-store';
 import { useDraft } from '../drafts';
 
 export function FocusView({ snapshot, task, transcript, now, onOpen }: { snapshot: WorkspaceSnapshot; task: Task; transcript: TranscriptItem[]; now: number; onOpen?: (taskId: string) => void }) {
+  const directoryWarning = warningText(task.sharedCwdWarning || '');
   // Completion reports duplicate the last transcript message here; only show what needs a decision.
   const open = snapshot.attention.filter((a) => a.taskId === task.taskId && a.state === 'open' && a.kind !== 'completion');
   // A question the agent asked in its own words is its message right above: only the newest
@@ -489,9 +490,9 @@ export function FocusView({ snapshot, task, transcript, now, onOpen }: { snapsho
             )}
           </div>
         </header>
-        {task.sharedCwdWarning ? (
+        {directoryWarning ? (
           <div className="warn-text pad">
-            <Icon name="alert" size={12} /> {warningText(task.sharedCwdWarning)}
+            <Icon name="alert" size={12} /> {directoryWarning}
           </div>
         ) : null}
         {error ? <div className="error-text pad">{error}</div> : null}
