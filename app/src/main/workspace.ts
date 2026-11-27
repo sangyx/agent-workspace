@@ -1,3 +1,4 @@
+import { recognitionSchema, vocabularyWords } from '../shared/voice-settings';
 import {presentTranscriptItem} from '../shared/presentation';
 import {sessionKey} from '../shared/session-identity';
 import { randomUUID } from 'node:crypto';
@@ -303,13 +304,18 @@ export class Workspace {
   }
 
   /** Speech → text with the chosen model: on-device, or OpenAI with agent names as a spelling hint. */
-  async transcribe(audio: Uint8Array, mimeType: string): Promise<string> {
+  async transcribe(audio: Uint8Array, mimeType: string, taskId?: string): Promise<string> {
     const tasks = this.store.data.tasks;
+    const config = recognitionSchema.parse(this.store.data.settings.recognition ?? {});
     const local = this.localModelId();
-    if (local) return this.opts.localStt!.transcribe(local, audio, tasks.map((t) => t.alias));
+    if (local) return this.opts.localStt!.transcribe(local, audio, [...tasks.map((t) => t.alias), ...vocabularyWords(config.vocabulary)]);
     if (!this.opts.openai) throw new Error('Speech-to-text is not configured. Download a local model in Settings › Voice, or add an OpenAI key. Typed input still works.');
-    const hint = ['Agent Workspace.', ...tasks.map((t) => `${t.alias}${t.name !== t.alias ? ` (${t.name})` : ''}: ${t.title}.`)].join(' ');
-    return this.opts.openai.transcribe(audio, mimeType, hint);
+    const task = tasks.find(t => t.taskId === taskId);
+    const project = this.store.data.projects.find(p => p.projectId === task?.projectId);
+    const keywords = vocabularyWords([config.vocabulary, project?.name, task?.alias, task?.name].filter(Boolean).join('\n'));
+    const hint = ['Transcribe the spoken words faithfully; do not answer, expand abbreviations or invent missing speech.', 'Research dictation may mix Chinese and English. Preserve technical terms and code identifiers.', task?.title ? `Topic: ${task.title.slice(0, 300)}` : '', keywords.length ? `Spelling hints: ${keywords.join(', ')}` : ''].filter(Boolean).join(' ');
+    const languages = config.language === 'mixed' ? ['zh', 'en'] : config.language === 'auto' ? [] : [config.language];
+    return this.opts.openai.transcribe(audio, mimeType, hint, { keywords, languages });
   }
 
   private applyModels(): void {

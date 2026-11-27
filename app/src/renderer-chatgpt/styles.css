@@ -8300,3 +8300,15 @@ button.subtask-row:hover {
 }
 .sidebar .project-glyph .icon { flex: none; }
 .sidebar .team-head:is(:hover, :focus-visible) .project-glyph { color: var(--text); }
+
+/* Voice chat stays in the composer, with captions above the existing input. */
+.live-voice-controls { display: inline-flex; align-items: center; gap: 4px; }
+.live-voice-controls > button { flex: none; }
+.live-voice-controls [aria-pressed='true'] { background: var(--selected); color: var(--text); }
+.live-voice-state { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--text-2); }
+.live-voice-caption { position: absolute; bottom: calc(100% + 8px); right: 0; max-width: min(600px, 75vw); max-height: 120px; overflow: auto; padding: 10px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); color: var(--text); font-size: 13px; line-height: 1.5; box-shadow: var(--shadow-1); }
+.live-voice-controls .error-text { color: var(--risk); }
+.speech-settings { display: grid; gap: 12px; padding-block: 12px; }
+.speech-settings h3, .speech-settings p { margin: 0; }
+.speech-settings label { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(140px, 2fr); gap: 12px; align-items: start; }
+.speech-settings textarea, .speech-settings select { min-width: 0; width: 100%; }

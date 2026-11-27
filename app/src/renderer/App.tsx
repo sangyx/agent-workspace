@@ -502,7 +502,7 @@ export function App() {
           </>
         )}
 
-        <VoiceDock snapshot={snapshot} focusedTaskId={settingsOpen ? null : focusTask ? focusId : selectedId} composeTo={!settingsOpen && !subView && focusTask ? focusTask.taskId : null} onDispatched={flashTile} onView={setFocusId} mainTranscript={snapshot.main ? (transcripts[snapshot.main.taskId] ?? []) : []} onSettings={() => setSettingsOpen(true)} />
+        <VoiceDock snapshot={snapshot} focusedTaskId={settingsOpen ? null : focusTask ? focusId : selectedId} composeTo={!settingsOpen && !subView && focusTask ? focusTask.taskId : null} onDispatched={flashTile} onView={setFocusId} mainTranscript={snapshot.main ? (transcripts[snapshot.main.taskId] ?? []) : []} onSettings={() => { setSettingsSection("voice"); setSettingsOpen(true); }} />
         </div>
         </SideSlot.Provider>
         {/* The agent view's preview and memory panels, full height on the right. */}

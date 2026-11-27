@@ -445,6 +445,8 @@ export interface SubtaskInfo {
 }
 
 export interface Settings {
+  recognition?: import('./voice-settings').RecognitionSettings;
+  liveVoice?: import('./voice-settings').LiveVoiceSettings;
   /** Chat interface and imported CSS, owned by Workspace rather than an embedding app. */
   chatAppearance?: import('./chat-appearance').ChatAppearance;
   /** First-run guide: shown on a fresh workspace until finished or skipped; reopened from Settings. */

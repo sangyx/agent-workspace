@@ -99,6 +99,9 @@ export interface Outputs {
   'task:importSession': Task;
   'attention:respond': void;
   'attention:dismiss': void;
+  'voice:liveStart': { sessionId: string; sdp: string };
+  'voice:liveEnd': void;
+  'voice:liveTurn': { text: string; status: 'done' | 'working' | 'waiting' | 'failed' };
   'voice:ensureMic': boolean;
   'voice:transcribe': { text: string };
   'route:decide': RouteDecision;

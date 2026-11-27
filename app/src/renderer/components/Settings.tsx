@@ -1,3 +1,4 @@
+import { SpeechSettings } from './SpeechSettings';
 import { ChatAppearanceSettings } from './ChatAppearanceSettings';
 import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import { NATIVE_PROVIDERS, type Language, type MicMode, type NativeProvider, type PermissionMode, type ProviderCapabilities, type RemoteHostStatus, type WorkspaceSnapshot } from '../../shared/types';
@@ -257,9 +258,10 @@ interface ModelOption {
 
 // Ratings come from this app's own tests (mixed Chinese/English clips, routing cases).
 const CLOUD_STT: ModelOption[] = [
-  { id: 'gpt-4o-transcribe', label: 'gpt-4o-transcribe', note: 'Most accurate; best with mixed Chinese and English', accuracy: 5, speed: 3 },
-  { id: 'gpt-4o-mini-transcribe', label: 'gpt-4o-mini-transcribe', note: 'Faster and cheaper, slightly less accurate', accuracy: 4, speed: 4 },
-  { id: 'whisper-1', label: 'whisper-1', note: 'Older Whisper model', accuracy: 3, speed: 3 },
+  { id: 'gpt-transcribe', label: 'GPT-Transcribe', note: 'Recommended for recorded speech; supports multilingual and vocabulary hints' },
+  { id: 'gpt-4o-transcribe', label: 'gpt-4o-transcribe', note: 'Legacy model; choose GPT-Transcribe for new use' },
+  { id: 'gpt-4o-mini-transcribe', label: 'gpt-4o-mini-transcribe', note: 'Legacy model; choose GPT-Transcribe for new use' },
+  { id: 'whisper-1', label: 'whisper-1', note: 'Older Whisper model' },
 ];
 const ROUTERS: ModelOption[] = [
   { id: 'gpt-5.4-mini', label: 'gpt-5.4-mini', note: 'Recommended: accurate, about 1 s', accuracy: 5, speed: 4 },
@@ -784,7 +786,7 @@ const SECTIONS: Array<{ id: string; group: string; title: string; keywords: stri
   { id: 'permissions', group: 'How agents work', title: 'Permissions', keywords: ['Decide automatically', 'Allow file edits', 'Ask every time', 'auto', 'approval'] },
   { id: 'memory', group: 'Memory and skills', title: 'Memory', keywords: ['User memory', 'Project memory', 'Keep user memory in sync', 'Import…', 'CLAUDE.md', 'AGENTS.md', 'notes'] },
   { id: 'skills', group: 'Memory and skills', title: 'Skills', keywords: ['skill', 'SKILL.md', 'library', 'import', 'Claude Code', 'Codex', '~/.claude/skills', '~/.codex/skills'] },
-  { id: 'voice', group: 'Voice and OpenAI', title: 'Voice', keywords: ['Microphone', 'Always on', 'Press to toggle', 'Hold to talk', 'Tap or hold', 'push to talk', 'Shortcut', 'hotkey', 'Speech recognition', 'Speech recognition model', 'Routing model', 'microphone', 'Send after a pause of', 'Confirm every voice send', 'OpenAI', 'On this computer', 'SenseVoice', 'Whisper', 'local', 'offline'] },
+  { id: 'voice', group: 'Voice and OpenAI', title: 'Voice', keywords: ['Voice chat', 'GPT-Live', 'Research vocabulary', 'Spoken language', 'Microphone', 'Always on', 'Press to toggle', 'Hold to talk', 'Tap or hold', 'push to talk', 'Shortcut', 'hotkey', 'Speech recognition', 'Speech recognition model', 'Routing model', 'microphone', 'Send after a pause of', 'Confirm every voice send', 'OpenAI', 'On this computer', 'SenseVoice', 'Whisper', 'local', 'offline'] },
   { id: 'openai', group: 'Voice and OpenAI', title: 'OpenAI', keywords: ['API key', 'OPENAI_API_KEY', 'key', 'Save key', 'cloud'] },
   { id: 'advanced', group: 'Advanced', title: 'Advanced', keywords: ['Latest turns shown in full', 'Tool call details', 'Move an agent to idle after', 'Main agent', 'Tool calls per message', 'Forks per message', 'Timeout for commands run with !', 'Restore defaults', 'fold', 'idle', 'timeout'] },
 ];
@@ -1018,6 +1020,7 @@ export function SettingsPage({ snapshot, section, onClose }: { snapshot: Workspa
           </span>
           <ShortcutField value={s.micShortcut ?? defaultShortcut()} onChange={(micShortcut) => update({ micShortcut })} />
         </div>
+        <SpeechSettings settings={s} />
         <ModelPickers snapshot={snapshot} onChange={update} />
         {micMode === 'open' ? (
           <SettingSwitch checked={s.autoListen} onChange={(on) => update({ autoListen: on })} label={t('Open the microphone when the app starts')} testId="setting-autolisten" />

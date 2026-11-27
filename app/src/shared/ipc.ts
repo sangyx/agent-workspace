@@ -1,3 +1,4 @@
+import { recognitionSchema, liveVoiceSchema } from './voice-settings';
 import { z } from 'zod';
 import { chatAppearanceSchema } from './chat-appearance';
 import { NATIVE_PROVIDERS } from './types';
@@ -106,9 +107,12 @@ export const ipcSchemas = {
     answers: z.record(z.string(), z.string().max(10_000)).optional(),
   }),
   'attention:dismiss': z.object({ attentionId: id }),
+  'voice:liveStart': z.object({ id, taskId: id, sdp: z.string().min(1).max(65536) }),
+  'voice:liveEnd': z.object({ id }),
+  'voice:liveTurn': z.object({ id, taskId: id, delegationId: id, utterance: z.string().max(12000) }),
   'voice:ensureMic': z.object({}),
   // One utterance; 16 kHz mono WAV caps at ~1 MB per 30 s.
-  'voice:transcribe': z.object({ audio: z.instanceof(Uint8Array).refine((a) => a.byteLength <= 8_000_000, 'Audio clip too large'), mimeType: z.string().max(100) }),
+  'voice:transcribe': z.object({ taskId: id.optional(), audio: z.instanceof(Uint8Array).refine((a) => a.byteLength <= 8_000_000, 'Audio clip too large'), mimeType: z.string().max(100) }),
   'route:decide': z.object({ utterance: text.min(1), focusedTaskId: id.nullable(), namedOnly: z.boolean().optional() }),
   'route:dispatch': z.object({
     utterance: text.min(1),
@@ -159,7 +163,7 @@ export const ipcSchemas = {
   'memory:scanImports': z.object({}),
   'memory:import': z.object({ items: z.array(z.object({ key: z.string().min(1).max(5000), scope: z.enum(['global', 'project']), projectId: id.optional() })).min(1).max(1000) }),
   'memory:syncNow': z.object({}),
-  'settings:update': z.object({ chatAppearance: chatAppearanceSchema.optional(), onboarding: z.object({ started: z.boolean().optional(), dismissed: z.boolean().optional(), voiceSkipped: z.boolean().optional(), remoteSkipped: z.boolean().optional(), languageChosen: z.boolean().optional() }).optional(), overviewSlots: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(4), z.literal(6), z.literal(9)]).optional(), alwaysConfirmVoice: z.boolean().optional(), autoListen: z.boolean().optional(), language: z.enum(['en', 'zh']).optional(), permissionMode: z.enum(['auto', 'edits', 'ask']).optional(), mainAgent: z.enum(['claude', 'codex', 'off']).optional(), sttModel: z.string().regex(/^[\w.:-]{1,80}$/).optional(), routerModel: z.string().regex(/^[\w.:-]{1,80}$/).optional(), voicePauseMs: z.number().int().min(800).max(8000).optional(), micMode: z.enum(['open', 'toggle', 'hold', 'both']).optional(), micShortcut: z.string().regex(/^((Meta|Control|Alt|Shift)\+){0,4}(Space|[A-Z0-9]|F([1-9]|1[0-9])|Up|Down|Left|Right)$/).optional(), mainChapters: z.enum(['auto', 'off']).optional(), memorySync: z.boolean().optional(), openTurns: z.number().int().min(0).max(5).optional(), toolsOpen: z.enum(['folded', 'failed', 'all']).optional(), idleAfterDays: z.number().int().min(0).max(30).optional(), mainCallsPerTurn: z.number().int().min(5).max(100).optional(), mainForksPerTurn: z.number().int().min(1).max(5).optional(), commandTimeoutMin: z.number().int().min(1).max(120).optional(), keepAwake: z.boolean().optional() }),
+  'settings:update': z.object({ recognition: recognitionSchema.optional(), liveVoice: liveVoiceSchema.optional(), chatAppearance: chatAppearanceSchema.optional(), onboarding: z.object({ started: z.boolean().optional(), dismissed: z.boolean().optional(), voiceSkipped: z.boolean().optional(), remoteSkipped: z.boolean().optional(), languageChosen: z.boolean().optional() }).optional(), overviewSlots: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(4), z.literal(6), z.literal(9)]).optional(), alwaysConfirmVoice: z.boolean().optional(), autoListen: z.boolean().optional(), language: z.enum(['en', 'zh']).optional(), permissionMode: z.enum(['auto', 'edits', 'ask']).optional(), mainAgent: z.enum(['claude', 'codex', 'off']).optional(), sttModel: z.string().regex(/^[\w.:-]{1,80}$/).optional(), routerModel: z.string().regex(/^[\w.:-]{1,80}$/).optional(), voicePauseMs: z.number().int().min(800).max(8000).optional(), micMode: z.enum(['open', 'toggle', 'hold', 'both']).optional(), micShortcut: z.string().regex(/^((Meta|Control|Alt|Shift)\+){0,4}(Space|[A-Z0-9]|F([1-9]|1[0-9])|Up|Down|Left|Right)$/).optional(), mainChapters: z.enum(['auto', 'off']).optional(), memorySync: z.boolean().optional(), openTurns: z.number().int().min(0).max(5).optional(), toolsOpen: z.enum(['folded', 'failed', 'all']).optional(), idleAfterDays: z.number().int().min(0).max(30).optional(), mainCallsPerTurn: z.number().int().min(5).max(100).optional(), mainForksPerTurn: z.number().int().min(1).max(5).optional(), commandTimeoutMin: z.number().int().min(1).max(120).optional(), keepAwake: z.boolean().optional() }),
   'capabilities:refresh': z.object({ localOnly: z.boolean().optional() }),
   'provider:login': z.object({ provider: z.enum(['claude', 'codex']), method: z.enum(['claudeai', 'console', 'chatgpt', 'device']).optional() }),
   'provider:loginCancel': z.object({ provider: z.enum(['claude', 'codex']) }),

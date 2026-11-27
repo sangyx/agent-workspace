@@ -1,3 +1,4 @@
+import { LiveVoiceService } from './live-voice';
 import {presentTranscriptItem} from '../shared/presentation';
 import { execFileSync } from "node:child_process";
 import {
@@ -281,6 +282,7 @@ export function createElectronWorkspaceHost(
   }
 
   type Handler = (input: never) => unknown;
+  const liveVoice = new LiveVoiceService(workspace);
   const handlers: { [C in IpcChannel]: Handler } = {
     "workspace:snapshot": () => workspace.snapshot(),
     "transcript:get": (i: { taskId: string }) => workspace.transcript(i.taskId),
@@ -431,14 +433,17 @@ export function createElectronWorkspaceHost(
     }) => workspace.respondAttention(i.attentionId, i.decision, i.answers),
     "attention:dismiss": (i: { attentionId: string }) =>
       workspace.dismissAttention(i.attentionId),
+    "voice:liveStart": (i: { id: string; taskId: string; sdp: string }) => liveVoice.start(i.id, i.taskId, i.sdp),
+    "voice:liveEnd": (i: { id: string }) => liveVoice.end(i.id),
+    "voice:liveTurn": (i: { id: string; taskId: string; delegationId: string; utterance: string }) => liveVoice.turn(i.id, i.taskId, i.delegationId, i.utterance),
     "voice:ensureMic": async () => {
       if (process.platform !== "darwin") return true;
       if (systemPreferences.getMediaAccessStatus("microphone") === "granted")
         return true;
       return systemPreferences.askForMediaAccess("microphone");
     },
-    "voice:transcribe": async (i: { audio: Uint8Array; mimeType: string }) => ({
-      text: await workspace.transcribe(i.audio, i.mimeType),
+    "voice:transcribe": async (i: { audio: Uint8Array; mimeType: string; taskId?: string }) => ({
+      text: await workspace.transcribe(i.audio, i.mimeType, i.taskId),
     }),
     "stt:download": (i: { id: string }) => void localStt.download(i.id),
     "stt:cancel": (i: { id: string }) => localStt.cancel(i.id),
@@ -742,6 +747,7 @@ export function createElectronWorkspaceHost(
       return result;
     },
     async shutdown() {
+      liveVoice.shutdown();
       await workspace.shutdown();
       for (const channel of Object.keys(ipcSchemas))
         ipcMain.removeHandler(channel);

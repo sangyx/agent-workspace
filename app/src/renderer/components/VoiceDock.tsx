@@ -1,3 +1,4 @@
+import { LiveVoiceControls } from '../../renderer/components/LiveVoiceControls';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
 import type { AgentProvider, RouteDecision, Task, TranscriptItem, WorkspaceSnapshot } from '../../shared/types';
@@ -85,6 +86,8 @@ export function VoiceDock({
   /** Opens Settings (where a speech model is chosen). */
   onSettings?: () => void;
 }) {
+  const [voiceChatActive, setVoiceChatActive] = useState(false);
+  const voiceChatRef = useRef(false); voiceChatRef.current = voiceChatActive;
   const [mic, setMic] = useState<MicState>('off');
   const now = useTick(2000);
   const [level, setLevel] = useState(0);
@@ -404,7 +407,7 @@ export function VoiceDock({
       partialGen.current++;
       current.partial = undefined;
       const index = current.parts.push(null) - 1;
-      call('voice:transcribe', { audio: wav, mimeType: 'audio/wav' })
+      call('voice:transcribe', { audio: wav, mimeType: 'audio/wav', taskId: focusRef.current ?? undefined })
         .then(({ text: heard }) => {
           current.parts[index] = heard && !isLikelyNoise(heard) ? heard : '';
         })
@@ -443,7 +446,7 @@ export function VoiceDock({
       const current = d;
       const gen = partialGen.current;
       partialBusy.current = true;
-      call('voice:transcribe', { audio: wav, mimeType: 'audio/wav' })
+      call('voice:transcribe', { audio: wav, mimeType: 'audio/wav', taskId: focusRef.current ?? undefined })
         .then(({ text: heard }) => {
           // Still the same segment, still this draft: show it.
           if (draft.current !== current || partialGen.current !== gen || !heard || isLikelyNoise(heard)) return;
@@ -470,7 +473,7 @@ export function VoiceDock({
   }, [scheduleCommit]);
 
   const startMic = useCallback(async () => {
-    if (!stt) return;
+    if (!stt || voiceChatRef.current) return;
     wantMic.current = true;
     setMic('starting');
     try {
@@ -725,7 +728,7 @@ export function VoiceDock({
   const micButton = (
         <button
           className={`mic mic-${mic}`}
-          disabled={!stt && !onSettings}
+          disabled={voiceChatActive || (!stt && !onSettings)}
           onClick={!stt ? onSettings : toggleMic}
           aria-pressed={live}
           aria-label={mode !== 'open' ? (live ? tr('Stop') : tr('Talk')) : live ? tr('Mute microphone') : tr('Unmute microphone')}
@@ -824,6 +827,7 @@ export function VoiceDock({
       ) : null}
 
             {micButton}
+            <LiveVoiceControls taskId={composeTo} available={snapshot.voice.cloudAvailable} onSettings={onSettings} onBeforeStart={() => { takeOver(); stopMic(); }} onActiveChange={setVoiceChatActive} />
             {mic === 'denied' || hint ? <div className="voice-inline-note error">{micLabel}</div> : note ? <div className={`voice-inline-note ${note.kind}`} data-testid="voice-note">{note.text}</div> : null}
           </div>,
           voiceSlot,

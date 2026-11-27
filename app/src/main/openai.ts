@@ -9,7 +9,7 @@ import { labelPrompt, labelRequest } from './label';
 // never transcripts or file contents.
 
 // Defaults; the user can pick others in Settings (env vars override for tests).
-export const STT_MODEL = process.env.AMW_STT_MODEL ?? 'gpt-4o-transcribe';
+export const STT_MODEL = process.env.AMW_STT_MODEL ?? 'gpt-transcribe';
 export const ROUTER_MODEL = process.env.AMW_ROUTER_MODEL ?? 'gpt-5.4-mini';
 
 /** Reasoning models reject temperature; give them the least reasoning they allow (routing must be quick). */
@@ -79,21 +79,37 @@ export class OpenAiClient {
     return this.modelList;
   }
 
-  async transcribe(audio: Uint8Array, mimeType: string, prompt?: string): Promise<string> {
+  async transcribe(audio: Uint8Array, mimeType: string, prompt?: string, hints?: { keywords: string[]; languages: string[] }): Promise<string> {
     const ext = mimeType.includes('mpeg') ? 'mp3' : mimeType.includes('mp4') ? 'mp4' : mimeType.includes('ogg') ? 'ogg' : mimeType.includes('wav') ? 'wav' : 'webm';
     const form = new FormData();
     form.append('file', new Blob([new Uint8Array(audio)], { type: mimeType || 'audio/webm' }), `utterance.${ext}`);
     form.append('model', this.sttModel);
-    if (prompt) form.append('prompt', prompt.slice(0, 800));
+    if (prompt) form.append('prompt', prompt.slice(0, 1600));
+    if (this.sttModel.startsWith('gpt-transcribe')) {
+      for (const word of hints?.keywords ?? []) form.append('keywords[]', word);
+      for (const language of hints?.languages ?? []) form.append('languages[]', language);
+    } else if (hints?.languages.length === 1) form.append('language', hints.languages[0]);
     const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
       headers: { Authorization: `Bearer ${this.key}` },
       body: form,
       signal: AbortSignal.timeout(60_000),
     });
-    if (!res.ok) throw new Error(`Transcription failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
+    if (!res.ok) throw new Error(`Transcription failed (${res.status}). Check the model, API key and usage limit in Voice settings.`);
     const json = (await res.json()) as { text?: string };
     return (json.text ?? '').trim();
+  }
+
+  async createLiveSession(session: Record<string, unknown>, sdp: string, signal?: AbortSignal): Promise<{ sessionId: string; sdp: string }> {
+    const res = await fetch('https://api.openai.com/v1/live/sessions', {
+      method: 'POST', headers: { Authorization: `Bearer ${this.key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session, transport: { type: 'webrtc', sdp } }),
+      signal: AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(30_000)]),
+    });
+    if (!res.ok) throw new Error(`Voice connection failed (${res.status}). Check GPT-Live access, API key and billing in Settings > OpenAI.`);
+    const value = await res.json() as { session?: { id?: unknown }; transport?: { sdp?: unknown } };
+    if (typeof value.session?.id !== 'string' || typeof value.transport?.sdp !== 'string') throw new Error('The voice provider returned an invalid connection.');
+    return { sessionId: value.session.id, sdp: value.transport.sdp };
   }
 
   async chatJson<T>(system: string, user: string, schema: Record<string, unknown>, name: string): Promise<T> {

@@ -186,6 +186,7 @@ const ICONS = {
   shield: 'M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6z',
   btw: 'M4 5h16v11H9l-5 4z M8 9h8 M8 12h5',
   image: 'M4 5h16v14H4z M4 16l5-5 4 4 3-3 4 4 M15 9h.01',
+  wave: 'M3 10v4 M7 7v10 M12 3v18 M17 7v10 M21 10v4',
   ...WORKSPACE_ICONS,
   gear: WORKSPACE_ICONS.settings,
 } as const;
