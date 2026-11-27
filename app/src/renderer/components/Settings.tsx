@@ -1,3 +1,4 @@
+import { ChatAppearanceSettings } from './ChatAppearanceSettings';
 import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import { NATIVE_PROVIDERS, type Language, type MicMode, type NativeProvider, type PermissionMode, type ProviderCapabilities, type RemoteHostStatus, type WorkspaceSnapshot } from '../../shared/types';
 import { call, errorText } from '../api';
@@ -772,6 +773,7 @@ function ShortcutField({ value, onChange }: { value: string; onChange: (shortcut
 
 // The settings, grouped: general first (language), then connecting the CLIs, how agents work, what they know, voice.
 const SECTIONS: Array<{ id: string; group: string; title: string; keywords: string[] }> = [
+  { id: 'appearance', group: 'General', title: 'Chat style', keywords: ['style', 'appearance', 'ChatGPT', 'Claude', 'CSS', 'theme'] },
   { id: 'language', group: 'General', title: 'Language', keywords: ['English', '中文', 'locale'] },
   { id: 'guide', group: 'General', title: 'Setup guide', keywords: ['guide', 'onboarding', 'first run', 'setup', 'Open the guide'] },
   { id: 'sleep', group: 'General', title: 'Sleep', keywords: ['Keep the computer awake while agents work', 'sleep', 'awake', 'caffeinate', 'lid'] },
@@ -869,6 +871,7 @@ export function SettingsPage({ snapshot, section, onClose }: { snapshot: Workspa
           ))}
         </nav>
         <div className="settings-content">
+      <Section id="appearance" query={query}><ChatAppearanceSettings settings={snapshot.settings} /></Section>
       <Section id="language" query={query}>
         <div className="segmented" role="radiogroup" aria-label={t('Language')}>
           {LANGUAGES.map((l) => (

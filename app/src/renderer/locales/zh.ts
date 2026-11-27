@@ -1,6 +1,17 @@
 // Simplified Chinese UI strings, keyed by the English text used at the call site.
 // Provider names (Claude Code, Codex), agent names and agent output stay as-is.
 export const zh: Record<string, string> = {
+  'Enabled': '已启用',
+  'Chat style': '聊天样式',
+  'Custom style': '自定义样式',
+  'Enable custom style': '启用自定义样式',
+  'Replace CSS…': '替换 CSS…',
+  'Import CSS…': '导入 CSS…',
+  'Import Chat style file': '导入聊天样式文件',
+  'Changes apply immediately. Custom CSS applies only to conversations; Settings keeps its standard appearance.': '修改即时生效。自定义 CSS 仅应用于会话，设置页面保持标准外观。',
+  'Choose a .css style file.': '请选择 .css 样式文件。',
+  'The CSS file is empty.': 'CSS 文件为空。',
+  'Choose a CSS text file smaller than 128 KB.': '请选择小于 128 KB 的 CSS 文本文件。',
   'Other chats': '其他会话',
   'Archive conversation': '归档会话',
   'Unarchive conversation': '取消归档会话',

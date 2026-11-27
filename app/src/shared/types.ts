@@ -445,6 +445,8 @@ export interface SubtaskInfo {
 }
 
 export interface Settings {
+  /** Chat interface and imported CSS, owned by Workspace rather than an embedding app. */
+  chatAppearance?: import('./chat-appearance').ChatAppearance;
   /** First-run guide: shown on a fresh workspace until finished or skipped; reopened from Settings. */
   onboarding?: { started?: boolean; dismissed?: boolean; voiceSkipped?: boolean; remoteSkipped?: boolean; languageChosen?: boolean };
   /** Overview tiles: 1, 2, 4, 6 or 9; unset or 0 = automatic (every agent that is busy or recently was). */

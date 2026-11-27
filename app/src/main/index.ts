@@ -22,6 +22,12 @@ const dataDir =
 mkdirSync(dataDir, { recursive: true });
 app.setPath("userData", join(dataDir, "electron"));
 app.setName("Agent Workspace");
+let rendererStyle: 'claude' | 'chatgpt' | undefined;
+function renderInterface(style: 'claude' | 'chatgpt' = 'claude') {
+  if (!win || win.isDestroyed() || rendererStyle === style) return;
+  rendererStyle = style;
+  void win.loadFile(join(appRoot, style === 'chatgpt' ? 'out/renderer-chatgpt/index.html' : 'out/renderer/index.html'));
+}
 let win: BrowserWindow | null = null;
 let host: ReturnType<typeof createElectronWorkspaceHost> | undefined;
 /**
@@ -71,7 +77,7 @@ function createWindow(): void {
   win.webContents.on("will-navigate", (e) => e.preventDefault());
   const devUrl = process.env.VITE_DEV_SERVER_URL;
   if (devUrl) void win.loadURL(devUrl);
-  else void win.loadFile(join(appRoot, "out/renderer/index.html"));
+
   win.on("closed", () => (win = null));
 }
 
@@ -104,7 +110,12 @@ app.whenReady().then(() => {
       join(userBase, app.isPackaged ? "Models" : ".models"),
     demo: demoMode,
     memorySync: !demoMode || process.env.AMW_MEMORY_SYNC === "1",
+    afterInvoke: (channel, input, _result, workspace) => {
+      if (channel === 'settings:update' && (input as {chatAppearance?: unknown}).chatAppearance && !process.env.VITE_DEV_SERVER_URL)
+        setTimeout(() => renderInterface(workspace.snapshot().settings.chatAppearance?.interfaceStyle), 0);
+    },
   });
+  if (!process.env.VITE_DEV_SERVER_URL) renderInterface(host.workspace.snapshot().settings.chatAppearance?.interfaceStyle);
 });
 let quitting = false;
 app.on("before-quit", (e) => {

@@ -1,3 +1,4 @@
+import { useChatAppearance } from './components/ChatAppearanceSettings';
 import {HostUsage} from './HostUsage';
 import {useWorkspaceEmbedding} from './embedding';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -131,14 +132,16 @@ export function App() {
     for (const k of Object.keys(localStorage)) if (k.startsWith('amw.mapEdits.')) localStorage.removeItem(k);
   }, []);
   // Every launch starts in Overview (spec 02).
-  const [focusId, setFocusId] = useState<string | null>(null);
+  const [focusId, setFocusId] = useState<string | null>(() => sessionStorage.getItem('amw.appearanceReturn') ? sessionStorage.getItem('amw.appearanceTask') : null);
   // A task created from a dialog shows up with the next snapshot; focus it then.
   const [pendingFocus, setPendingFocus] = useState<string | null>(null);
   const [dialog, setDialog] = useState<'new' | 'import' | null>(null);
   // Settings is a page in the main area, like VS Code, not a dialog.
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(() => sessionStorage.getItem('amw.appearanceReturn') === '1');
   // Opened from elsewhere (e.g. an agent's memory chip) at a given section.
-  const [settingsSection, setSettingsSection] = useState<string | undefined>();
+  const [settingsSection, setSettingsSection] = useState<string | undefined>(() => sessionStorage.getItem('amw.appearanceReturn') ? 'appearance' : undefined);
+  useEffect(() => { sessionStorage.removeItem('amw.appearanceReturn'); }, []);
+  useChatAppearance(snapshot?.settings, settingsOpen, focusId, 'claude');
   useEffect(() => {
     const open = (e: Event) => {
       setSettingsSection((e as CustomEvent<{ section?: string }>).detail?.section);

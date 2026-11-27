@@ -8,7 +8,7 @@
   "scripts": {
     "setup": "bash scripts/setup.sh",
     "build:main": "node scripts/build-main.mjs",
-    "build:renderer": "vite build",
+    "build:renderer": "node scripts/build-renderers.mjs",
     "build": "npm run build:main && npm run build:renderer",
     "start": "npm run build && bash scripts/electron.sh",
     "demo": "npm run build && AMW_MODE=demo bash scripts/electron.sh",
@@ -63,7 +63,7 @@
   "build": {
     "appId": "com.flitternie.agentworkspace",
     "productName": "Agent Workspace",
-    "copyright": "© 2026 Flitternie",
+    "copyright": "\u00a9 2026 Flitternie",
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -72,6 +72,7 @@
       "out/main/**",
       "out/preload/**",
       "out/renderer/**",
+      "out/renderer-chatgpt/**",
       "package.json",
       "!out/smoke/**",
       "!node_modules/@anthropic-ai/claude-agent-sdk-*/**"
