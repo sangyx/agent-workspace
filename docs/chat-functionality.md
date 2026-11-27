@@ -48,3 +48,15 @@ performance benchmarks.
 Research-specific context generation and host project catalog reconciliation
 remain the responsibility of the embedding app. No host research data, credentials
 or user transcripts are included in this repository.
+
+## Upstream 0.15.5 integration
+
+Merged upstream `e6681b5` while retaining host categories, import assignments,
+lossless context presentation, shared transcript caching, SSH Antigravity and
+model/reasoning controls. Chrome and Artifacts support use upstream's provider
+path and permission workflow. Codex yes/no MCP requests appear as approvals;
+forms requiring fields remain unsupported, as upstream reports.
+
+Both interfaces include the full-width sub-agent scrolling and attachment remove
+button fixes. Their shared Settings page uses the upstream on/off switches; the
+customized interface includes the matching switch styles.

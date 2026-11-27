@@ -117,6 +117,10 @@ export interface StartArgs {
   /** The model to run on; unset = the CLI's default. */
   model?: string;
   reasoningEffort?: ReasoningEffort | null;
+  /** Claude Code: drive the user's Chrome through the Claude in Chrome extension (--chrome). */
+  chrome?: boolean;
+  /** Claude Code: the Artifact tool (publish a page to claude.ai), off by default in the SDK. */
+  artifacts?: boolean;
   /** The workspace skill library, as paths on the machine the CLI runs on. */
   skills?: { pluginDir: string; root: string };
   permissionMode?: PermissionMode;
