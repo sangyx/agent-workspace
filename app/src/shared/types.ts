@@ -576,7 +576,7 @@ export interface WorkspaceSnapshot {
     cloudAvailable: boolean;
     localModels: LocalModelState[];
     /** Where the OpenAI key comes from; the key itself never reaches the renderer. */
-    openaiKey: { source: 'env' | 'saved' | 'file' | null; last4?: string };
+    openaiKey: { source: 'env' | 'saved' | 'file' | null; last4?: string; loading?: boolean; error?: string };
   };
   dataDir: string;
   /** Tasks with a live provider session right now (others resume on demand). */

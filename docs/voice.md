@@ -20,3 +20,7 @@ Official references:
 - [Voice-agent architectures](https://developers.openai.com/api/docs/guides/voice-agents)
 - [GPT-Live WebRTC](https://developers.openai.com/api/docs/guides/voice-webrtc?api=live)
 - [Client delegation](https://developers.openai.com/api/docs/guides/live-delegation)
+
+## Credential access
+
+Saved API keys use Electron's asynchronous safeStorage API (including ciphertext saved by the older synchronous API). Credential access starts after the workspace is wired and never blocks the application main thread. Requests have an eight-second deadline; failure keeps the saved ciphertext intact and exposes a retry action under Settings > OpenAI. Timed-out writes never commit late results. No plaintext storage or synchronous fallback is used.

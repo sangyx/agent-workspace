@@ -172,6 +172,7 @@ export const ipcSchemas = {
   'models:list': z.object({}),
   'openai:setKey': z.object({ key: z.string().min(20).max(400).regex(/^\S+$/) }),
   'openai:clearKey': z.object({}),
+  'openai:retryKey': z.object({}),
   'stt:download': z.object({ id }),
   'stt:cancel': z.object({ id }),
   'stt:delete': z.object({ id }),

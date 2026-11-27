@@ -495,7 +495,7 @@ function OpenAiKey({ snapshot }: { snapshot: WorkspaceSnapshot }) {
         ? t('Saved on this computer, encrypted') + tail
         : info.source === 'file'
           ? t('Read from an openai.key file') + tail
-          : t('No key yet');
+          : info.loading ? t('Unlocking secure storage…') : t('No key yet');
   return (
     <div className="openai-key" data-testid="openai-key">
       <p className="muted small">
@@ -513,6 +513,12 @@ function OpenAiKey({ snapshot }: { snapshot: WorkspaceSnapshot }) {
           <span className={`badge ${info.source ? 'badge-ready' : 'badge-missing'}`}>{info.source ? t('Ready') : t('Not configured')}</span>
         </div>
       </div>
+      {info.error ? <div className="error-text small" role="alert">
+        {t(info.error)}{' '}
+        <button className="btn" disabled={busy || info.loading} onClick={async () => {
+          setBusy(true); try { await call('openai:retryKey', {}); } finally { setBusy(false); }
+        }} data-testid="openai-key-retry">{t('Retry access')}</button>
+      </div> : null}
       <div className="row key-row">
         <input
           className="input grow"

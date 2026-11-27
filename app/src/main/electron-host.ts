@@ -179,25 +179,26 @@ export function createElectronWorkspaceHost(
     workspace.setOpenAi(openai, { source: keySource(), last4: key.slice(-4) });
 
   /** Applies the best available key: environment, then the one saved in Settings, then the key file. */
-  function useBestKey(): void {
+  let keyRevision = 0;
+  async function useBestKey(): Promise<void> {
+    const revision = ++keyRevision;
     if (process.env.AMW_NO_OPENAI === "1") return;
     const env = envOpenAiKey();
-    if (env)
-      return workspace.setOpenAi(new OpenAiClient(env), {
-        source: "env",
-        last4: env.slice(-4),
-      });
-    const saved = keyStore.load();
-    if (saved)
-      return workspace.setOpenAi(new OpenAiClient(saved), {
-        source: "saved",
-        last4: saved.slice(-4),
-      });
-    const file = loadOpenAiKey(appRoot);
-    workspace.setOpenAi(
-      file ? new OpenAiClient(file) : undefined,
-      file ? { source: "file", last4: file.slice(-4) } : { source: null },
-    );
+    if (env) {
+      workspace.setOpenAi(new OpenAiClient(env), { source: "env", last4: env.slice(-4) });
+      return;
+    }
+    if (keyStore.hasSaved()) workspace.setOpenAi(undefined, { source: null, loading: true });
+    try {
+      const saved = await keyStore.load();
+      if (revision !== keyRevision) return;
+      const file = saved ? undefined : loadOpenAiKey(appRoot);
+      const selected = saved || file;
+      workspace.setOpenAi(selected ? new OpenAiClient(selected) : undefined,
+        selected ? { source: saved ? "saved" : "file", last4: selected.slice(-4) } : { source: null });
+    } catch (error) {
+      if (revision === keyRevision) workspace.setOpenAi(undefined, { source: null, error: (error as Error).message });
+    }
   }
 
   const win = () =>
@@ -613,14 +614,18 @@ export function createElectronWorkspaceHost(
       const k = i.key.trim();
       const problem = await checkOpenAiKey(k);
       if (problem) return { ok: false, error: problem };
-      keyStore.save(k);
-      useBestKey();
+      const revision = ++keyRevision;
+      await keyStore.save(k);
+      if (revision !== keyRevision) return { ok: false, error: "The credential request was superseded." };
+      const env = envOpenAiKey();
+      workspace.setOpenAi(new OpenAiClient(env || k), { source: env ? "env" : "saved", last4: (env || k).slice(-4) });
       return { ok: true, overriddenByEnv: !!envOpenAiKey() };
     },
-    "openai:clearKey": () => {
+    "openai:clearKey": async () => {
       keyStore.clear();
-      useBestKey();
+      await useBestKey();
     },
+    "openai:retryKey": () => useBestKey(),
     "demo:seed": () => {
       if (!demoMode)
         throw new Error(
@@ -716,7 +721,6 @@ export function createElectronWorkspaceHost(
     });
   }
 
-  useBestKey();
   if (!workspace.snapshot().settings.language)
     workspace.updateSettings({
       language: app.getLocale().startsWith("zh") ? "zh" : "en",
@@ -724,6 +728,8 @@ export function createElectronWorkspaceHost(
   registerIpc();
   servePreviews();
   wireEvents();
+  // Keychain initialization may wait for the OS; keep navigation and text chat usable.
+  void useBestKey();
   if (options.refresh !== false) void workspace.refreshCapabilities();
   if (options.memorySync) workspace.startMemorySync();
   if (demoMode && workspace.snapshot().tasks.length === 0)
@@ -747,6 +753,7 @@ export function createElectronWorkspaceHost(
       return result;
     },
     async shutdown() {
+      ++keyRevision;
       liveVoice.shutdown();
       await workspace.shutdown();
       for (const channel of Object.keys(ipcSchemas))

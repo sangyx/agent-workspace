@@ -134,6 +134,7 @@ export interface Outputs {
   'models:list': string[];
   'openai:setKey': { ok: boolean; error?: string; overriddenByEnv?: boolean };
   'openai:clearKey': void;
+  'openai:retryKey': void;
   'stt:download': void;
   'stt:cancel': void;
   'stt:delete': void;

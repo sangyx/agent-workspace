@@ -1,6 +1,9 @@
 // Simplified Chinese UI strings, keyed by the English text used at the call site.
 // Provider names (Claude Code, Codex), agent names and agent output stay as-is.
 export const zh: Record<string, string> = {
+  'Unlocking secure storage…': '正在访问安全存储…',
+  'Retry access': '重试访问',
+  'macOS secure storage did not respond or could not unlock the saved API key. Your saved key is unchanged. Retry access in Settings > OpenAI.': 'macOS 安全存储未响应或无法解锁已保存的 API 密钥。密钥保持不变。请在设置 > OpenAI 中重试访问。',
   'Enabled': '已启用',
   'Chat style': '聊天样式',
   'Custom style': '自定义样式',
