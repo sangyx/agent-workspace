@@ -794,6 +794,7 @@ export class Workspace {
   async refreshHistory(taskId: string, force = false): Promise<TranscriptItem[] | undefined> {
     const task = this.findTask(taskId);
     if (!task || task === this.store.data.mainAgent || this.closed || this.live.has(taskId) || this.connecting.has(taskId)) return;
+    if (task.host) this.requireHost(task.host);
     const session = this.currentSession(task);
     if (!session?.nativeSessionId || !this.opts.adapters[task.provider]?.readHistory) return;
     const pending = this.historyReads.get(taskId);

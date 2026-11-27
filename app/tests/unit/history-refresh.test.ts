@@ -48,6 +48,7 @@ it('unchanged native history preserves row timestamps and emits no transcript re
 });
 it('opening uses a read-only refresh on the source machine; errors and empty reads preserve the cache', async () => {
   const { ws, task, cwd, readHistory, createSession } = await setup(); task.host = 'lab-host';
+  vi.spyOn(ws as unknown as { enabledHosts(): string[] }, 'enabledHosts').mockReturnValue(['lab-host']);
   readHistory.mockResolvedValue([row('old'), row('remote')]);
   await ws.refreshHistory(task.taskId, true); expect(readHistory).toHaveBeenLastCalledWith('native', cwd, 'lab-host');
   const before = structuredClone(ws.transcript(task.taskId));
@@ -107,4 +108,10 @@ it('ignores in-flight reads when the native ID or local transcript changes', asy
   ws.store.setTranscript(task.taskId, [{ id: 'local', taskId: task.taskId, role: 'user', text: 'New local message', createdAt: 'now' }]);
   second.resolve([row('stale-content')]); await loading;
   expect(ws.transcript(task.taskId).map(i => i.id)).toEqual(['local']);
+});
+
+it('does not contact a source machine that was disabled in Settings', async () => {
+  const { ws, task, readHistory } = await setup(); task.host = 'disabled-host'; readHistory.mockClear();
+  await expect(ws.refreshHistory(task.taskId, true)).rejects.toThrow('not enabled');
+  expect(readHistory).not.toHaveBeenCalled();
 });
