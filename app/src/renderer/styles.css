@@ -7775,3 +7775,11 @@ button.subtask-row:hover {
 .project-heading { display: flex; align-items: center; border-radius: var(--radius-md); }
 .project-heading > .team-head { flex: 1; min-width: 0; }
 .project-actions { flex: none; margin-right: 4px; font-size: 19px; }
+
+/* Give the new-chat model choices room; keep provider names intact on small screens. */
+.modal:has(.new-chat-model) { width: min(720px, calc(100vw - 48px)); }
+.new-chat-model fieldset { min-width: 0; }
+.new-chat-model .new-chat-providers { flex-wrap: wrap; }
+.new-chat-providers .radio { flex: 1 1 13em; }
+.new-chat-providers :is(.provider-name, .provider-version) { white-space: nowrap; }
+.new-chat-providers input { flex: none; }

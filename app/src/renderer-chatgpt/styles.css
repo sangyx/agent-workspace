@@ -8333,3 +8333,11 @@ button.subtask-row:hover {
 .md-code, .md-code pre { min-width: 0; max-width: 100%; }
 .md-code pre code { white-space: inherit; overflow-wrap: inherit; }
 .message-rewind { display: inline-flex; align-items: center; gap: 4px; }
+
+/* Give the new-chat model choices room; keep provider names intact on small screens. */
+.modal:has(.new-chat-model) { width: min(720px, calc(100vw - 48px)); }
+.new-chat-model fieldset { min-width: 0; }
+.new-chat-model .new-chat-providers { flex-wrap: wrap; }
+.new-chat-providers .radio { flex: 1 1 13em; }
+.new-chat-providers :is(.provider-name, .provider-version) { white-space: nowrap; }
+.new-chat-providers input { flex: none; }

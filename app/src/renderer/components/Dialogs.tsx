@@ -171,9 +171,8 @@ export function NewTaskDialog({ snapshot, initialProjectId, onClose, onCreated, 
       <div className="field">
         <details className="new-chat-model" data-testid="new-chat-model" onToggle={(e) => setModelOpen(e.currentTarget.open)}>
           <summary><span>{t('Model')}</span><span className="truncate">{model?.label ?? t('Default model')}</span></summary>
-          <fieldset>
-            <legend>{t('Provider')}</legend>
-            <div className="row">
+          <fieldset aria-label={t('Provider')}>
+            <div className="row new-chat-providers">
               {providers.map((p) => {
                 const c = capOf(p);
                 return (
@@ -181,8 +180,8 @@ export function NewTaskDialog({ snapshot, initialProjectId, onClose, onCreated, 
                     <input type="radio" name="provider" checked={provider === p} disabled={!usable(p)} onChange={() => {
                       setProvider(p);
                       setModel(null);
-                    }} /> {PROVIDER_LABEL[p]}
-                    {c?.version ? <span className="muted small"> {shortVersion(c.version)}</span> : null}
+                    }} /> <span className="provider-name">{PROVIDER_LABEL[p]}</span>
+                    {c?.version ? <span className="muted small provider-version">{shortVersion(c.version)}</span> : null}
                   </label>
                 );
               })}
