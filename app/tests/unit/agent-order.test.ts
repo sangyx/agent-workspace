@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fillSlots, IDLE_AFTER_MS, isSetAside, needsYou, overviewCandidates, rank, RECENT_MS, slotsFor, teams, tierOf, visibleOrder } from '../../src/shared/agent-order';
+import { fillSlots, IDLE_AFTER_MS, isSetAside, needsYou, overviewCandidates, rank, recentConversations, recentConversationTeams, RECENT_MS, slotsFor, teams, tierOf, visibleOrder } from '../../src/shared/agent-order';
 import type { AttentionItem, Task } from '../../src/shared/types';
 
 const NOW = Date.parse('2026-11-14T12:00:00Z');
@@ -169,5 +169,26 @@ describe('agent order', () => {
     expect(teams([two], projects, [], NOW, 24 * H)[0].idle.map((t) => t.taskId)).toEqual(['two']);
     const old = task('old');
     expect(teams([old], projects, [], NOW, Infinity)[0].members.map((t) => t.taskId)).toEqual(['old']);
+  });
+});
+
+describe('project conversation recency', () => {
+  it('sorts by newest update regardless of urgency, without mutating the input', () => {
+    const old = task('old', { status: 'waiting_for_user', updatedAt: ago(5 * H) });
+    const newest = task('new', { updatedAt: ago(0) });
+    const middle = task('middle', { status: 'running', updatedAt: ago(H) });
+    const original = [old, newest, middle];
+    expect(recentConversations(original).map(t => t.taskId)).toEqual(['new', 'middle', 'old']);
+    expect(original[0]).toBe(old);
+  });
+  it('uses creation time when an update is missing or invalid and breaks ties consistently', () => {
+    expect(recentConversations([task('z', { updatedAt: 'bad', createdAt: ago(0) }), task('a', { updatedAt: '', createdAt: ago(0) }), task('older', { updatedAt: ago(H) })]).map(t => t.taskId)).toEqual(['a', 'z', 'older']);
+  });
+  it('preserves project grouping and folds while sorting conversations and shortcut targets', () => {
+    const list = teams([task('old', { updatedAt: ago(H) }), task('new', { updatedAt: ago(0) }), task('aside-old', { setAside: true, updatedAt: ago(3 * H) }), task('aside-new', { setAside: true, updatedAt: ago(2 * H) })], [{ projectId: 'p1', name: 'Research', kind: 'research' }], [], NOW);
+    const sorted = recentConversationTeams(list);
+    expect(sorted[0].project).toEqual(list[0].project); expect(sorted[0].active).toBe(list[0].active);
+    expect(visibleOrder(sorted, () => true).map(t => t.taskId)).toEqual(['new', 'old']);
+    expect(sorted[0].idle.map(t => t.taskId)).toEqual(['aside-new', 'aside-old']);
   });
 });

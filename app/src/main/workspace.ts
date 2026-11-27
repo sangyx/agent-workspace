@@ -834,6 +834,8 @@ export class Workspace {
     const next = [...notes, ...native];
     if (!isDeepStrictEqual(saved, next)) {
       this.store.setTranscript(task.taskId, next);
+      const sourceTime = events.reduce((latest, event) => event.type === 'transcriptItem' && event.historyUpdatedAt ? Math.max(latest, Date.parse(event.historyUpdatedAt) || 0) : latest, 0);
+      if (sourceTime && (!saved.length || sourceTime > (Date.parse(task.updatedAt) || 0))) task.updatedAt = new Date(sourceTime).toISOString();
       for (const cb of this.transcriptListeners) cb(task.taskId, null);
       const last = [...native].reverse().find((item) => item.role === 'assistant' && item.text.trim());
       if (last) task.summary = summaryFor(last.text);

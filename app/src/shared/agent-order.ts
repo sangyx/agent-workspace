@@ -204,3 +204,14 @@ export function fillSlots(previous: string[], candidates: Task[], open: Attentio
 export function slotsFor(layout: number | undefined, candidates: number): number {
   return layout ? layout : Math.min(Math.max(candidates, 0), 9);
 }
+
+/** Project conversations use their last update, independently of the attention/Overview order. */
+export function recentConversations(tasks: Task[]): Task[] {
+  const updated = (task: Task) => ms(task.updatedAt) || ms(task.createdAt);
+  return [...tasks].sort((a, b) => updated(b) - updated(a) || ms(b.createdAt) - ms(a.createdAt) || a.taskId.localeCompare(b.taskId));
+}
+
+/** Keep the project grouping while aligning its visible conversations and keyboard shortcuts. */
+export function recentConversationTeams(list: Team[]): Team[] {
+  return list.map(team => ({ ...team, members: recentConversations(team.members), idle: recentConversations(team.idle) }));
+}

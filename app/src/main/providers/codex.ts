@@ -467,7 +467,11 @@ export class CodexAdapter implements ProviderAdapter {
       await server.initialize();
       const thread = rec(rec(await server.rpc('thread/read', { threadId: nativeSessionId, includeTurns: true })).thread);
       const turns = Array.isArray(thread.turns) ? thread.turns : [];
-      return turns.flatMap((turn) => (Array.isArray(rec(turn).items) ? (rec(turn).items as unknown[]) : []).flatMap((item) => itemEvents(item, true, true, cwd)));
+      const events = turns.flatMap((turn) => (Array.isArray(rec(turn).items) ? (rec(turn).items as unknown[]) : []).flatMap((item) => itemEvents(item, true, true, cwd)));
+      const updated = typeof thread.updatedAt === 'number' ? thread.updatedAt * 1000 : Date.parse(str(thread.updatedAt));
+      const first = events.find(event => event.type === 'transcriptItem');
+      if (first?.type === 'transcriptItem' && Number.isFinite(updated) && updated > 0) first.historyUpdatedAt = new Date(updated).toISOString();
+      return events;
     } finally {
       server.kill();
     }

@@ -8274,3 +8274,7 @@ button.subtask-row:hover {
     transition: none;
   }
 }
+
+/* Project header actions share one compact, keyboard-accessible row. */
+.project-conversation-actions { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+.project-conversation-actions .icon-btn { width: 28px; height: 28px; padding: 0; display: inline-grid; place-items: center; }

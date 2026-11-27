@@ -1,5 +1,6 @@
+import { ProjectConversationActions } from '../../renderer/components/ProjectConversationActions';
 import { useState, type MouseEvent } from 'react';
-import { needsYou, visibleOrder, type Team } from '../../shared/agent-order';
+import { needsYou, recentConversations, visibleOrder, type Team } from '../../shared/agent-order';
 import type { Task, WorkspaceSnapshot } from '../../shared/types';
 import { Alias, displayName, Icon, Kbd, liveSubtasks, PROVIDER_LABEL, STATUS_LABEL, SubtaskDots, SubtaskThread } from './bits';
 import { AccountLimits } from './SessionUsage';
@@ -142,13 +143,12 @@ export function Sidebar({
               )}
               {open_ ? (
                 <>
-                  {team.members.map((t) => row(t))}
+                  {recentConversations(idleShown ? [...team.members, ...team.idle] : team.members).map((t) => row(t))}
                   {team.idle.length ? (
                     <>
                       <button className="team-idle" onClick={() => setShowIdle((cur) => ({ ...cur, [team.project.projectId]: !idleShown }))} data-testid="team-idle">
                         {idleShown ? tr('Hide idle') : tr('⋯ {n} idle', { n: team.idle.length })}
                       </button>
-                      {idleShown ? team.idle.map((t) => row(t)) : null}
                     </>
                   ) : null}
                 </>
@@ -159,7 +159,7 @@ export function Sidebar({
   // In the archive every agent is idle: no second fold per project, nor an idle row; each project is a
   // label over all its agents, so opening the archive shows them.
   const renderArchived = (team: Team) => {
-    const agents = [...team.members, ...team.idle];
+    const agents = recentConversations([...team.members, ...team.idle]);
     return (
       <div key={team.project.projectId} className="team archived open" data-testid="team" data-project={team.project.name}>
         <div className="team-head archived-head" data-testid="team-head" onContextMenu={(e) => projectMenu(e, team.project.projectId)}>
@@ -289,17 +289,10 @@ export function Sidebar({
       ) : null}
 
       <div className="sidebar-section">
-        <span>{tr('Agents')}</span>
-        <span className="sidebar-section-actions">
-          <button className="icon-btn" aria-label={tr('Continue a session…')} title={tr('Continue a session…')} onClick={onResume} data-testid="resume-session">
-            <Icon name="history" />
-          </button>
-          <button className="icon-btn" aria-label={tr('New task')} title={tr('New task')} onClick={onNewTask} data-testid="sidebar-new-task">
-            <Icon name="plus" />
-          </button>
-        </span>
+        <span>{tr('Projects')}</span>
+        <ProjectConversationActions onNewChat={onNewTask} onContinue={onResume} />
       </div>
-      <nav className="agent-list" aria-label="Agents" onScroll={showScrollbarAWhile} data-testid="agent-list">
+      <nav className="agent-list" aria-label={tr('Projects')} onScroll={showScrollbarAWhile} data-testid="agent-list">
         {snapshot.tasks.length === 0 ? <div className="muted small pad-x">{tr('No agents yet.')}</div> : null}
         {live.map(renderTeam)}
         {archived.length ? (

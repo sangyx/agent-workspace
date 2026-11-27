@@ -11,7 +11,7 @@ it('shows externally continued Codex history automatically without resuming its 
   const history = join(home, 'history.json'), calls = join(home, 'calls.log'), answer = join(home, 'answer.json');
   writeFileSync(answer, '""');
   const turn = (id: string, text: string) => ({ id, status: 'completed', items: [{ id: `a-${id}`, type: 'agentMessage', text }] });
-  const saved = { id: 'external-native', cwd, turns: [turn('1', 'Original native answer')] };
+  const saved = { id: 'external-native', cwd, updatedAt: Math.floor(Date.now() / 1000), turns: [turn('1', 'Original native answer')] };
   writeFileSync(history, JSON.stringify(saved));
   writeFileSync(join(bin, 'codex'), `#!/usr/bin/env node
 const fs=require('node:fs');
@@ -35,10 +35,12 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
     await page.locator(`[data-testid="rail-item"][data-alias="${task.alias}"]`).click();
     await expect.poll(() => page.locator('.focus-thread').innerText()).toContain('Original native answer');
     saved.turns.push(turn('2', 'New answer written in the other Codex app'));
+    saved.updatedAt += 1;
     writeFileSync(history, JSON.stringify(saved));
     // The active page polls saved history; no sync button is clicked.
     await expect.poll(() => page.locator('.focus-thread').innerText(), { timeout: 30_000 }).toContain('New answer written in the other Codex app');
     const snapshot = await invoke('workspace:snapshot', {});
+    expect(snapshot.tasks[0].updatedAt).toBe(new Date(saved.updatedAt * 1000).toISOString());
     expect(snapshot.tasks).toHaveLength(1); expect(snapshot.tasks[0].projectId).toBe(project.projectId);
     expect(snapshot.sessions).toHaveLength(1); expect(snapshot.connectedTaskIds).toEqual([]);
     expect(readFileSync(calls, 'utf8')).not.toMatch(/thread\/(resume|start)/);

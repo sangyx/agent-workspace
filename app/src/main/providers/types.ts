@@ -48,6 +48,8 @@ export type ProviderEvent =
       tool?: Partial<ToolCallInfo>;
       /** true when replaying history on resume, not new activity */
       history?: boolean;
+      /** Source modification time when reading saved history (not the time we polled it). */
+      historyUpdatedAt?: string;
       /** Images in a user message read back from history: base64 bytes, or a file on the agent's machine. */
       images?: HistoryImage[];
     }

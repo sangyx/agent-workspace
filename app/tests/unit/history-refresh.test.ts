@@ -115,3 +115,11 @@ it('does not contact a source machine that was disabled in Settings', async () =
   await expect(ws.refreshHistory(task.taskId, true)).rejects.toThrow('not enabled');
   expect(readHistory).not.toHaveBeenCalled();
 });
+
+it('uses the native modification time for external updates rather than the poll time', async () => {
+  const { ws, task, readHistory } = await setup();
+  const sourceTime = new Date(Date.now() + 10_000).toISOString();
+  readHistory.mockResolvedValue([{ ...row('new source answer'), historyUpdatedAt: sourceTime } as ProviderEvent]);
+  await ws.refreshHistory(task.taskId, true); expect(task.updatedAt).toBe(sourceTime);
+  await ws.refreshHistory(task.taskId, true); expect(task.updatedAt).toBe(sourceTime);
+});

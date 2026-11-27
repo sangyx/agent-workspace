@@ -14,6 +14,8 @@ export const zh: Record<string, string> = {
   Home: '主页',
   Projects: '项目',
   'Add project': '添加项目',
+  'Project list options': '项目列表选项',
+  'Add existing folder as project…': '将已有文件夹添加为项目…',
   'No account limits reported yet.': '尚未收到用量额度信息。',
   'Work details': '工作详情',
   'Worked for {duration}': '工作耗时 {duration}',

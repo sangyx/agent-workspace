@@ -1,5 +1,6 @@
+import { ProjectConversationActions } from '../../renderer/components/ProjectConversationActions';
 import { useState, type MouseEvent } from 'react';
-import { needsYou, type Team } from '../../shared/agent-order';
+import { needsYou, recentConversations, type Team } from '../../shared/agent-order';
 import type { Task, WorkspaceSnapshot } from '../../shared/types';
 import { displayName, Icon, liveSubtasks, PROVIDER_LABEL, STATUS_LABEL, SubtaskDots, SubtaskThread } from './bits';
 import { AccountLimits } from './SessionUsage';
@@ -162,13 +163,12 @@ export function Sidebar({
               )}
               {open_ ? (
                 <>
-                  {team.members.map((t) => row(t))}
+                  {recentConversations(idleShown ? [...team.members, ...team.idle] : team.members).map((t) => row(t))}
                   {team.idle.length ? (
                     <>
                       <button className="team-idle" onClick={() => setShowIdle((cur) => ({ ...cur, [team.project.projectId]: !idleShown }))} data-testid="team-idle">
                         {idleShown ? tr('Show less') : tr('Show more')} · {team.idle.length}
                       </button>
-                      {idleShown ? team.idle.map((t) => row(t)) : null}
                     </>
                   ) : null}
                 </>
@@ -194,7 +194,7 @@ export function Sidebar({
   // In the archive every agent is idle: no second fold per project, nor an idle row; each project is a
   // label over all its agents, so opening the archive shows them.
   const renderArchived = (team: Team) => {
-    const agents = [...team.members, ...team.idle];
+    const agents = recentConversations([...team.members, ...team.idle]);
     return (
       <div key={team.project.projectId} className="team archived open" data-testid="team" data-project={team.project.name}>
         <div className="team-head archived-head" data-testid="team-head" onContextMenu={(e) => projectMenu(e, team.project.projectId)}>
@@ -298,14 +298,6 @@ export function Sidebar({
         </span>
       </div>
 
-      <div className="sidebar-tools">
-      <button className="nav-item" onClick={onNewTask} data-testid="sidebar-new-task">
-        <Icon name="plus" /> {tr('New chat')}
-      </button>
-      <button className="nav-item" onClick={onResume} data-testid="resume-session">
-        <Icon name="history" /> {tr('Continue a session…')}
-      </button>
-      </div>
 
       {snapshot.main ? <div className="sidebar-section"><span>{tr('Chats')}</span></div> : null}
 
@@ -340,9 +332,7 @@ export function Sidebar({
 
       <div className="sidebar-section">
         <span>{tr('Projects')}</span>
-        <button type="button" className="icon-btn" data-testid="add-project" aria-label={tr('Add project')} title={tr('Add project')} disabled={addingProject} onClick={() => void addProject()}>
-          <Icon name="plus" size={17} />
-        </button>
+        <ProjectConversationActions onNewChat={onNewTask} onContinue={onResume} onAddFolder={() => void addProject()} addingFolder={addingProject} />
       </div>
       {projectError ? <div className="error-text pad-x" role="alert">{projectError}</div> : null}
       <nav className="agent-list" aria-label={tr('Projects')} onScroll={showScrollbarAWhile} data-testid="agent-list">

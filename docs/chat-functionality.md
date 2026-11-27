@@ -79,3 +79,17 @@ Explicit Sync releases our idle connection and reads history without resuming;
 busy Deimos turns and pending native approvals are never interrupted. A real
 Send/Resume still acquires the provider session through its normal permission
 workflow and reloads current history.
+
+## Project conversation navigation
+
+Both native interfaces place New Chat and Continue Session icons beside Projects.
+The customized interface's folder picker is retained in Project list options as
+“Add existing folder as project…”, rather than an ambiguous plus button.
+The embedding host can hide standalone branding without changing this generic UI.
+
+Conversations inside each project sort by newest `updatedAt` (creation time is
+the fallback, ties are deterministic). Expanded and archived lists use the same
+order. The separate Needs You strip and Overview keep their attention ordering;
+project categories and user-controlled expansion are preserved. Codex saved
+history carries its source modification time, so external updates advance the
+conversation timestamp without treating every poll as activity.

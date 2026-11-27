@@ -1,7 +1,7 @@
 import {HostUsage} from '../renderer/HostUsage';
 import {useWorkspaceEmbedding} from '../renderer/embedding';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { fillSlots, IDLE_AFTER_MS, OVERVIEW_SLOTS, overviewCandidates, slotsFor, teams, visibleOrder } from '../shared/agent-order';
+import { fillSlots, IDLE_AFTER_MS, OVERVIEW_SLOTS, overviewCandidates, slotsFor, teams, recentConversationTeams, visibleOrder } from '../shared/agent-order';
 import { call, errorText } from './api';
 import { AgentCard } from './components/AgentCard';
 import { savePreview } from './preview-store';
@@ -202,7 +202,7 @@ export function App() {
   const galleryW = useElementWidth(galleryEl);
   const openAll = snapshot?.attention.filter((a) => a.state === 'open') ?? [];
   const idleDays = snapshot?.settings.idleAfterDays;
-  const teamList = snapshot ? teams(snapshot.tasks, snapshot.projects, openAll, now, idleDays === undefined ? IDLE_AFTER_MS : idleDays === 0 ? Infinity : idleDays * 86_400_000) : [];
+  const teamList = snapshot ? recentConversationTeams(teams(snapshot.tasks, snapshot.projects, openAll, now, idleDays === undefined ? IDLE_AFTER_MS : idleDays === 0 ? Infinity : idleDays * 86_400_000)) : [];
   const order = visibleOrder(teamList, expanded);
   // Overview: busy or recently busy agents, by priority, in as many tiles as the layout has.
   const layout = snapshot?.settings.overviewSlots ?? 0;
