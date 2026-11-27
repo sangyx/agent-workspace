@@ -8311,4 +8311,5 @@ button.subtask-row:hover {
 .speech-settings { display: grid; gap: 12px; padding-block: 12px; }
 .speech-settings h3, .speech-settings p { margin: 0; }
 .speech-settings label { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(140px, 2fr); gap: 12px; align-items: start; }
-.speech-settings textarea, .speech-settings select { min-width: 0; width: 100%; }
+.speech-settings textarea, .speech-settings select { min-width: 0; width: 100%; min-height: 34px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--panel); color: var(--text); font: inherit; }
+.speech-settings :is(textarea, select):focus-visible { outline: 2px solid var(--text-3); outline-offset: 2px; }
