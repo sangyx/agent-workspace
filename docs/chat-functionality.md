@@ -106,3 +106,7 @@ provider history are preserved. `originalChatText` reconstructs the exact source
 including attached context. Multiple replies and Unicode are supported; quoted
 examples, unrelated JSON and malformed payloads remain unchanged. Task summaries
 and derived titles use the readable answer rather than the transport payload.
+
+## Provider usage overview
+
+The embedding Usage panel shows Codex, Claude and Antigravity once each. Tracked token totals include local and remote tasks and the main agent once; context and reasoning are not counted again. Account quota uses the latest reported provider snapshot rather than adding percentages from multiple machines. Per-host records remain intact for session-specific warnings. Missing provider quota is explicit, not represented as zero. Antigravity currently exposes token/context usage through ACP and subscription tier metadata, but the probed CLI version did not advertise an account-quota command or include quota windows in session metadata.

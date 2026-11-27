@@ -8313,3 +8313,16 @@ button.subtask-row:hover {
 .speech-settings label { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(140px, 2fr); gap: 12px; align-items: start; }
 .speech-settings textarea, .speech-settings select { min-width: 0; width: 100%; min-height: 34px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--panel); color: var(--text); font: inherit; }
 .speech-settings :is(textarea, select):focus-visible { outline: 2px solid var(--text-3); outline-offset: 2px; }
+
+/* Usage is grouped by provider, with one compact card for all machines. */
+.provider-usage-list{display:flex;flex-direction:column;gap:10px;min-width:0}
+.provider-usage-card{border:1px solid var(--border);border-radius:10px;padding:12px;text-align:left}
+.provider-usage-title{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.provider-usage-title>span:first-child{display:inline-flex;align-items:center;gap:8px}
+.provider-usage-title .provider-icon{width:18px;height:18px}
+.provider-usage-card p{margin:8px 0 0}
+.provider-usage-window{margin-top:10px}
+.provider-usage-window .usage-bar{margin:5px 0}
+.provider-usage-note{margin:2px 0 0;line-height:1.5}
+.host-usage{position:fixed;z-index:1000;left:24px;bottom:24px;width:min(440px,calc(100vw - 48px));max-height:calc(100vh - 48px);overflow-y:auto;padding:18px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 40px #0002}
+.host-usage>header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}

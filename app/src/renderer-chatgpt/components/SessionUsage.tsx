@@ -1,3 +1,4 @@
+import { limitsByProvider } from '../../shared/provider-usage';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { LimitWindow, ProviderLimits, Task } from '../../shared/types';
@@ -277,7 +278,7 @@ export function AccountLimits({ limits, now, payAsYouGo = [], rail = false }: { 
       window.removeEventListener('keydown', escape, true);
     };
   }, [open]);
-  const rows = Object.entries(limits)
+  const rows = Object.entries(limitsByProvider(limits))
     .filter(([, l]) => mainWindows(l.windows).length)
     .map(([key, l]) => ({ key, l, provider: (l.provider ?? key.split('@')[0]) as Task['provider'], host: l.host ?? key.split('@')[1] }))
     .sort((a, b) => Number(!!a.host) - Number(!!b.host) || (a.host ?? '').localeCompare(b.host ?? '') || a.provider.localeCompare(b.provider));

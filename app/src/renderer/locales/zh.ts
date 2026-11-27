@@ -1,6 +1,13 @@
 // Simplified Chinese UI strings, keyed by the English text used at the call site.
 // Provider names (Claude Code, Codex), agent names and agent output stay as-is.
 export const zh: Record<string, string> = {
+  'Usage & limits': '用量与额度',
+  'Close usage': '关闭用量',
+  '{n} tokens tracked': '已记录 {n} tokens',
+  'No tracked tokens yet': '暂无已记录的 token 用量',
+  'Account quota not reported by this provider yet.': '此服务尚未返回账户额度。',
+  'Resets {time}': '{time} 重置',
+  'Latest reported quota per provider. Tracked tokens include all conversations; quota percentages are not added together.': '显示各服务最近返回的额度。Token 用量汇总所有会话；额度百分比不会累加。',
   'Unlocking secure storage…': '正在访问安全存储…',
   'Retry access': '重试访问',
   'macOS secure storage did not respond or could not unlock the saved API key. Your saved key is unchanged. Retry access in Settings > OpenAI.': 'macOS 安全存储未响应或无法解锁已保存的 API 密钥。密钥保持不变。请在设置 > OpenAI 中重试访问。',
