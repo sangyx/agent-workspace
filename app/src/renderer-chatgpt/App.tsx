@@ -137,7 +137,8 @@ export function App() {
   const lastChatId = useRef<string | null>(null);
   // A task created from a dialog shows up with the next snapshot; focus it then.
   const [pendingFocus, setPendingFocus] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<'new' | 'import' | null>(null);
+  const [dialog, setDialogState] = useState<{ kind: 'new' | 'import'; projectId?: string } | null>(null);
+  const setDialog = (kind: 'new' | 'import' | null, projectId?: string) => setDialogState(kind ? { kind, projectId } : null);
   // Settings is a page in the main area, like VS Code, not a dialog.
   const [settingsOpen, setSettingsOpen] = useState(() => sessionStorage.getItem('amw.appearanceReturn') === '1');
   // Opened from elsewhere (e.g. an agent's memory chip) at a given section.
@@ -367,8 +368,8 @@ export function App() {
           setSettingsOpen(false);
           setSubView({ taskId, subtaskId });
         }}
-        onNewTask={() => setDialog('new')}
-        onResume={() => setDialog('import')}
+        onNewTask={(projectId) => setDialog('new', projectId)}
+        onResume={(projectId) => setDialog('import', projectId)}
         onSettings={() => setSettingsOpen(true)}
         page={settingsOpen ? 'settings' : focusTask || (subView && exists.has(subView.taskId)) ? 'home' : 'overview'}
         teamList={teamList}
@@ -543,8 +544,8 @@ export function App() {
         ))}
       </div>
 
-      {dialog === 'new' ? <NewTaskDialog snapshot={snapshot} onClose={() => setDialog(null)} onCreated={(id) => { toast(t('Agent created'), id); setPendingFocus(id); }} onContinue={() => setDialog('import')} /> : null}
-      {dialog === 'import' ? <ImportDialog snapshot={snapshot} onClose={() => setDialog(null)} onImported={(id) => { toast(t('Session imported'), id); setPendingFocus(id); }} /> : null}
+      {dialog?.kind === 'new' ? <NewTaskDialog snapshot={snapshot} initialProjectId={dialog.projectId} onClose={() => setDialog(null)} onCreated={(id) => { toast(t('Agent created'), id); setPendingFocus(id); }} onContinue={(projectId) => setDialog('import', projectId)} /> : null}
+      {dialog?.kind === 'import' ? <ImportDialog snapshot={snapshot} initialProjectId={dialog.projectId} onClose={() => setDialog(null)} onImported={(id) => { toast(t('Session imported'), id); setPendingFocus(id); }} /> : null}
     </div>
     </ToolsOpenContext.Provider>
   );

@@ -91,11 +91,11 @@ export function ConfirmDialog({
 }
 
 /** `onContinue`: switch to Continue a session… instead, for someone who meant to pick up an existing conversation. */
-export function NewTaskDialog({ snapshot, onClose, onCreated, onContinue }: { snapshot: WorkspaceSnapshot; onClose: () => void; onCreated: (taskId: string) => void; onContinue?: () => void }) {
+export function NewTaskDialog({ snapshot, initialProjectId, onClose, onCreated, onContinue }: { snapshot: WorkspaceSnapshot; initialProjectId?: string; onClose: () => void; onCreated: (taskId: string) => void; onContinue?: (projectId: string) => void }) {
   const providers = snapshot.demo ? ([...NATIVE_PROVIDERS, 'mock'] as const) : NATIVE_PROVIDERS;
   const firstAvailable = providers.find((p) => snapshot.capabilities.find((c) => c.provider === p)?.available) ?? providers[0];
-  // The project used most recently (most of the time the right one); the chooser lists the rest.
-  const [projectId, setProjectId] = useState(() => defaultProject(snapshot));
+  // A project menu supplies its target; global creation still offers the most recently used project.
+  const [projectId, setProjectId] = useState(() => snapshot.projects.some(p => p.projectId === initialProjectId) ? initialProjectId! : defaultProject(snapshot));
   const [provider, setProvider] = useState<AgentProvider>(firstAvailable);
   const [model, setModel] = useState<ModelOption | null>(null);
   const [modelOpen, setModelOpen] = useState(false);
@@ -159,7 +159,7 @@ export function NewTaskDialog({ snapshot, onClose, onCreated, onContinue }: { sn
       {onContinue ? (
         <div className="hint new-continue" data-testid="new-continue-hint">
           {t('Continuing an existing conversation?')}{' '}
-          <button className="link" onClick={onContinue} data-testid="new-continue-session">
+          <button className="link" onClick={() => onContinue(projectId)} data-testid="new-continue-session">
             {t('Continue a session…')}
           </button>
         </div>
@@ -239,17 +239,19 @@ export function NewTaskDialog({ snapshot, onClose, onCreated, onContinue }: { sn
   );
 }
 
-/** Recent Claude Code / Codex sessions from any folder on this computer (or one SSH host), newest first. */
-export function ImportDialog({ snapshot, onClose, onImported }: { snapshot: WorkspaceSnapshot; onClose: () => void; onImported: (taskId: string) => void }) {
+/** Saved provider sessions from this computer or an enabled SSH host, newest first. */
+export function ImportDialog({ snapshot, initialProjectId, onClose, onImported }: { snapshot: WorkspaceSnapshot; initialProjectId?: string; onClose: () => void; onImported: (taskId: string) => void }) {
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [provider, setProvider] = useState<'all' | NativeProvider>('all');
   const [importing, setImporting] = useState('');
   const [showAutomated, setShowAutomated] = useState(() => readPref(AUTOMATED_KEY) === '1');
-  const [destination, setDestination] = useState('');
+  const initialProject = snapshot.projects.find(p => p.projectId === initialProjectId);
+  const [destination, setDestination] = useState(initialProject?.projectId ?? '');
   // Sources: this computer plus the machines turned on in Settings › Remote machines.
   const hosts = snapshot.remoteHosts.map((h) => h.host);
   const [source, setSource] = useState<string>(() => {
+    if (initialProject) return initialProject.host && hosts.includes(initialProject.host) ? initialProject.host : LOCAL;
     const saved = readSource();
     return saved === 'all' || saved === LOCAL || hosts.includes(saved) ? saved : LOCAL;
   });
@@ -311,7 +313,7 @@ export function ImportDialog({ snapshot, onClose, onImported }: { snapshot: Work
           {snapshot.projects.map((p) => <option key={p.projectId} value={p.projectId}>{p.name}{p.host ? ` · ${p.host}` : ''}</option>)}
         </select>
       </label>
-      <p className="muted small">{t('The session keeps its original working folder and machine. An imported session opens in its existing project.')}</p>
+      <p className="muted small">{project ? t('The session joins this project and keeps its original working folder and machine.') : t('The session keeps its original working folder and machine. An imported session opens in its existing project.')}</p>
       <div className="row">
         {hosts.length ? (
           <select className="input select" value={source} onChange={(e) => setSource(e.target.value)} title={t('Where the sessions are')} data-testid="session-host">

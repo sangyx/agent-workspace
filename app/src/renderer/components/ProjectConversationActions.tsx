@@ -1,6 +1,6 @@
 import { Icon } from './bits';
 import { t } from '../i18n';
-import { useContextMenu } from './ContextMenu';
+import { useContextMenu, type MenuItem } from './ContextMenu';
 
 /** Conversation actions belong beside the project list, rather than in a second navigation block. */
 export function ProjectConversationActions({ onNewChat, onContinue, onAddFolder, addingFolder }: {
@@ -21,4 +21,12 @@ export function ProjectConversationActions({ onNewChat, onContinue, onAddFolder,
     </span>
     {menu.element}
   </>;
+}
+
+/** Shared by the project's button menu and right-click menu in both interfaces. */
+export function projectConversationItems(projectId: string, onNew: (projectId: string) => void, onImport: (projectId: string) => void): MenuItem[] {
+  return [
+    { id: 'new-chat', label: t('New chat'), icon: 'plus', onSelect: () => onNew(projectId) },
+    { id: 'import-conversation', label: t('Import conversation…'), icon: 'history', onSelect: () => onImport(projectId) },
+  ];
 }

@@ -1,6 +1,6 @@
 import { ArchivedConversations } from '../../renderer/components/ArchivedConversations';
 import { useConversationActions } from '../../renderer/components/ConversationActions';
-import { ProjectConversationActions } from '../../renderer/components/ProjectConversationActions';
+import { ProjectConversationActions, projectConversationItems } from '../../renderer/components/ProjectConversationActions';
 import { useState, type MouseEvent } from 'react';
 import { needsYou, recentConversations, type Team } from '../../shared/agent-order';
 import type { Task, WorkspaceSnapshot } from '../../shared/types';
@@ -46,8 +46,8 @@ export function Sidebar({
   onSelect: (taskId: string) => void;
   onHome: () => void;
   onOverview: () => void;
-  onNewTask: () => void;
-  onResume: () => void;
+  onNewTask: (projectId?: string) => void;
+  onResume: (projectId?: string) => void;
   onSettings: () => void;
   page: 'home' | 'overview' | 'settings';
   /** Opens a sub-agent's read-only view. */
@@ -88,7 +88,7 @@ export function Sidebar({
   const [editing, setEditing] = useState<{ taskId: string; field: AgentField; needs: boolean } | { projectId: string } | null>(null);
   const editingField = (t: Task, needs: boolean) => (editing && 'taskId' in editing && editing.taskId === t.taskId && editing.needs === needs ? editing.field : null);
   const editingProject = (id: string) => !!editing && 'projectId' in editing && editing.projectId === id;
-  const projectItems = (projectId: string): MenuItem[] => [{ id: 'rename-project', label: tr('Rename project…'), icon: 'pencil', onSelect: () => setEditing({ projectId }) }];
+  const projectItems = (projectId: string): MenuItem[] => [...projectConversationItems(projectId, onNewTask, onResume), { id: 'rename-project', label: tr('Rename project…'), icon: 'pencil', onSelect: () => setEditing({ projectId }) }];
   const projectMenu = (e: MouseEvent, projectId: string) => menu.open(menuAt(e, projectItems(projectId)));
   const projectNameEdit = (team: Team) => (
     <InlineEdit
@@ -147,7 +147,7 @@ export function Sidebar({
                   {projectNameEdit(team)}
                 </div>
               ) : (
-              <div className="project-heading">
+              <div className="project-heading" onContextMenu={(e) => projectMenu(e, team.project.projectId)}>
               <button
                 className="team-head"
                 onClick={() => toggle(team)}
@@ -335,7 +335,7 @@ export function Sidebar({
 
       <div className="sidebar-section">
         <span>{tr('Projects')}</span>
-        <ProjectConversationActions onNewChat={onNewTask} onContinue={onResume} onAddFolder={() => void addProject()} addingFolder={addingProject} />
+        <ProjectConversationActions onNewChat={() => onNewTask()} onContinue={() => onResume()} onAddFolder={() => void addProject()} addingFolder={addingProject} />
       </div>
       {projectError ? <div className="error-text pad-x" role="alert">{projectError}</div> : null}
       <nav className="agent-list" aria-label={tr('Projects')} onScroll={showScrollbarAWhile} data-testid="agent-list">

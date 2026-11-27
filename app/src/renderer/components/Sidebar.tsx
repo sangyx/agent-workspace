@@ -1,6 +1,6 @@
 import { ArchivedConversations } from './ArchivedConversations';
 import { useConversationActions } from './ConversationActions';
-import { ProjectConversationActions } from '../../renderer/components/ProjectConversationActions';
+import { ProjectConversationActions, projectConversationItems } from '../../renderer/components/ProjectConversationActions';
 import { useState, type MouseEvent } from 'react';
 import { needsYou, recentConversations, visibleOrder, type Team } from '../../shared/agent-order';
 import type { Task, WorkspaceSnapshot } from '../../shared/types';
@@ -45,8 +45,8 @@ export function Sidebar({
   focusId: string | null;
   onSelect: (taskId: string) => void;
   onOverview: () => void;
-  onNewTask: () => void;
-  onResume: () => void;
+  onNewTask: (projectId?: string) => void;
+  onResume: (projectId?: string) => void;
   onSettings: () => void;
   settingsOpen?: boolean;
   /** Opens a sub-agent's read-only view. */
@@ -70,7 +70,7 @@ export function Sidebar({
   const [editing, setEditing] = useState<{ taskId: string; field: AgentField; needs: boolean } | { projectId: string } | null>(null);
   const editingField = (t: Task, needs: boolean) => (editing && 'taskId' in editing && editing.taskId === t.taskId && editing.needs === needs ? editing.field : null);
   const editingProject = (id: string) => !!editing && 'projectId' in editing && editing.projectId === id;
-  const projectItems = (projectId: string): MenuItem[] => [{ id: 'rename-project', label: tr('Rename project…'), icon: 'pencil', onSelect: () => setEditing({ projectId }) }];
+  const projectItems = (projectId: string): MenuItem[] => [...projectConversationItems(projectId, onNewTask, onResume), { id: 'rename-project', label: tr('Rename project…'), icon: 'pencil', onSelect: () => setEditing({ projectId }) }];
   const projectMenu = (e: MouseEvent, projectId: string) => menu.open(menuAt(e, projectItems(projectId)));
   const projectNameEdit = (team: Team) => (
     <InlineEdit
@@ -123,6 +123,7 @@ export function Sidebar({
                   {projectNameEdit(team)}
                 </div>
               ) : (
+              <div className="project-heading" onContextMenu={(e) => projectMenu(e, team.project.projectId)}>
               <button
                 className="team-head"
                 onClick={() => toggle(team)}
@@ -145,6 +146,8 @@ export function Sidebar({
                   {!team.members.length ? <span className="team-count idle">{tr('{n} idle', { n: team.idle.length })}</span> : null}
                 </span>
               </button>
+              {projectActions(team.project.projectId)}
+              </div>
               )}
               {open_ ? (
                 <>
@@ -161,6 +164,12 @@ export function Sidebar({
             </div>
           );
           };
+  function projectActions(projectId: string) {
+    return <button type="button" className="icon-btn project-actions" aria-label={tr('Project options')} data-testid="project-options" onClick={(e) => {
+      const bounds = e.currentTarget.getBoundingClientRect();
+      menu.open({ x: bounds.left, y: bounds.bottom, items: projectItems(projectId), keyboard: e.detail === 0 });
+    }}><span aria-hidden>⋯</span></button>;
+  }
   // In the archive every agent is idle: no second fold per project, nor an idle row; each project is a
   // label over all its agents, so opening the archive shows them.
   const renderArchived = (team: Team) => {
@@ -169,6 +178,7 @@ export function Sidebar({
       <div key={team.project.projectId} className="team archived open" data-testid="team" data-project={team.project.name}>
         <div className="team-head archived-head" data-testid="team-head" onContextMenu={(e) => projectMenu(e, team.project.projectId)}>
           {editingProject(team.project.projectId) ? projectNameEdit(team) : <span className="team-name truncate">{team.project.name}</span>}
+          {!editingProject(team.project.projectId) ? projectActions(team.project.projectId) : null}
           <span className="team-counts">
             <span className="team-count idle">{agents.length === 1 ? tr('1 agent') : tr('{n} agents', { n: agents.length })}</span>
           </span>
@@ -295,7 +305,7 @@ export function Sidebar({
 
       <div className="sidebar-section">
         <span>{tr('Projects')}</span>
-        <ProjectConversationActions onNewChat={onNewTask} onContinue={onResume} />
+        <ProjectConversationActions onNewChat={() => onNewTask()} onContinue={() => onResume()} />
       </div>
       <nav className="agent-list" aria-label={tr('Projects')} onScroll={showScrollbarAWhile} data-testid="agent-list">
         {snapshot.tasks.length === 0 ? <div className="muted small pad-x">{tr('No agents yet.')}</div> : null}

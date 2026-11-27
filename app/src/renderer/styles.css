@@ -7770,3 +7770,8 @@ button.subtask-row:hover {
 .md-code, .md-code pre { min-width: 0; max-width: 100%; }
 .md-code pre code { white-space: inherit; overflow-wrap: inherit; }
 .message-rewind { display: inline-flex; align-items: center; gap: 4px; }
+
+/* One project row, with its disclosure and options as separate keyboard targets. */
+.project-heading { display: flex; align-items: center; border-radius: var(--radius-md); }
+.project-heading > .team-head { flex: 1; min-width: 0; }
+.project-actions { flex: none; margin-right: 4px; font-size: 19px; }
