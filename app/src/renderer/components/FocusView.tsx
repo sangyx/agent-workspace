@@ -1,3 +1,4 @@
+import { QuestionReplyMessage } from '../../renderer/QuestionReplyMessage';
 import { useHistoryRefresh } from '../../renderer/state';
 import {presentTranscriptItem} from '../../shared/presentation';
 import {ContextNotes} from '../../renderer/ContextNotes';
@@ -991,7 +992,7 @@ const Transcript = memo(function Transcript({ items, main, task, snapshot }: { i
                 </div> : null}
               {item.role === 'user' && item.contextNotes?.length ? <ContextNotes notes={item.contextNotes}/> : null}
               {item.role === 'user' && item.images?.length ? <MessageImages images={item.images} /> : null}
-              {item.role === 'user' && !item.text.trim() && item.images?.length ? null : item.role === 'system' && item.memoryUpdate?.length ? (
+              {item.role === 'user' && item.questionReplies?.length ? <QuestionReplyMessage replies={item.questionReplies} originalText={item.originalText} /> : item.role === 'user' && !item.text.trim() && item.images?.length ? null : item.role === 'system' && item.memoryUpdate?.length ? (
                 <details className="msg-system memory-sent" data-testid="memory-sent">
                   <summary>
                     <Icon name="spark" size={11} /> {t('Memory sent with this message: {n}', { n: item.memoryUpdate.length })}

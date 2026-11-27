@@ -24,3 +24,12 @@ it('keeps legitimate user code and quoted memory text visible and bounds import 
  const folded=presentTranscriptItem({...item,text:review});expect(folded.text).toBe('');expect(folded.contextNotes?.[0].text).toBe(review);
  expect(sessionTitle('中文\nTitle')).toBe('中文 Title');
 });
+it('uses readable question replies for native messages and task summaries while keeping raw history lossless',()=>{
+ const raw='<send_user_message_question_reply>\n'+JSON.stringify([{questionItemId:'fixture',question:'May I restart it?',answer:'Keep it running.'}])+'\n</send_user_message_question_reply>';
+ const item:any={id:'question-reply',taskId:'t1',role:'user',text:raw,createdAt:'now',delivery:'turn'};
+ const shown=presentTranscriptItem(item);
+ expect(shown.text).toBe('Keep it running.');expect(shown.questionReplies?.[0].question).toBe('May I restart it?');expect(shown.delivery).toBe('turn');
+ expect(originalChatText({...shown,at:'now'} as any)).toBe(raw);expect(item.text).toBe(raw);
+ expect(turnsOf([item])[0].user.text).toBe('Keep it running.');expect(sessionTitle(raw)).toBe('Keep it running.');
+ expect(presentTranscriptItem(shown)).toBe(shown);
+});

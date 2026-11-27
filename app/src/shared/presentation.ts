@@ -5,14 +5,14 @@ export {isApprovalReviewTitle};
 export {filterImportCandidates} from '../../../packages/embedded-chat/src/chatImportPresentation';
 /** Display envelope only; the native transcript and provider history remain authoritative. */
 export function presentTranscriptItem(item: TranscriptItem): TranscriptItem {
-  if(item.role!=='user'||item.contextNotes?.length)return item;
+  if(item.role!=='user'||item.originalText!==undefined)return item;
   if(isApprovalReviewTitle(item.text)) return {...item,text:'',contextNotes:[{kind:'history',text:item.text}]};
-  const shown=presentChatMessage({id:item.id,role:'user',text:item.text,at:item.createdAt});
-  return shown.contextNotes?.length ? {...item,text:shown.text,contextNotes:shown.contextNotes} : item;
+  const shown=presentChatMessage({id:item.id,role:'user',text:item.text,at:item.createdAt,contextNotes:item.contextNotes});
+  return shown.questionReplies?.length || (shown.contextNotes?.length && !item.contextNotes?.length) ? {...item,text:shown.text,contextNotes:shown.contextNotes,questionReplies:shown.questionReplies,originalText:shown.originalText} : item;
 }
 export function sessionTitle(title: string, fallback='Saved conversation') {
   const shown=presentChatMessage({id:'title',role:'user',text:title||'',at:''});
-  return importCandidateTitle(shown.contextNotes?.length ? shown.text : title) || fallback;
+  return importCandidateTitle(shown.text) || fallback;
 }
 
 export function isInternalTitle(title: string) {

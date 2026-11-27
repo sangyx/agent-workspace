@@ -93,3 +93,16 @@ order. The separate Needs You strip and Overview keep their attention ordering;
 project categories and user-controlled expansion are preserved. Codex saved
 history carries its source modification time, so external updates advance the
 conversation timestamp without treating every poll as activity.
+
+## Question-reply messages
+
+Complete standalone `send_user_message_question_reply` payloads are presented as
+quoted questions followed by the user's answers. Transport IDs and JSON stay
+under Original message, rendered only when expanded. Both native interfaces
+share the renderer and the embedded package shares its strict parser.
+
+This is presentation only: native/store text, IDs, timestamps, attachments and
+provider history are preserved. `originalChatText` reconstructs the exact source,
+including attached context. Multiple replies and Unicode are supported; quoted
+examples, unrelated JSON and malformed payloads remain unchanged. Task summaries
+and derived titles use the readable answer rather than the transport payload.

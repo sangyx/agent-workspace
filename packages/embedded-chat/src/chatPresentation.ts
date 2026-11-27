@@ -1,3 +1,4 @@
+import {questionReplies} from './questionReply';
 import type { WorkspaceMessage } from "./workspaceChat";
 
 const memoryHeader = "## Workspace memory update (provided by Agent Workspace)";
@@ -16,10 +17,10 @@ export function attachChatHistory(history: string, request: string) {
 export function presentChatMessage(
   message: WorkspaceMessage,
 ): WorkspaceMessage {
-  if (message.role !== "user" || message.contextNotes?.length) return message;
+  if (message.role !== "user" || message.originalText !== undefined) return message;
   let text = message.text;
-  const notes: NonNullable<WorkspaceMessage["contextNotes"]> = [];
-  for (let i = 0; i < 8; i++) {
+  const notes: NonNullable<WorkspaceMessage["contextNotes"]> = [...(message.contextNotes || [])];
+  for (let i = 0; !message.contextNotes?.length && i < 8; i++) {
     const attached = attachedHistory.exec(text);
     if (attached) {
       const end = attached[0].length + Number(attached[1]);
@@ -57,11 +58,13 @@ export function presentChatMessage(
     }
     break;
   }
-  return notes.length ? { ...message, text, contextNotes: notes } : message;
+  const replies = questionReplies(text);
+  if (replies) return { ...message, text: replies.map(reply => reply.answer).join("\n\n"), questionReplies: replies, originalText: originalChatText(message), ...(notes.length ? { contextNotes: notes } : {}) };
+  return notes.length && !message.contextNotes?.length ? { ...message, text, contextNotes: notes } : message;
 }
 
 export function originalChatText(message: WorkspaceMessage) {
-  return (
+  return message.originalText ?? (
     (message.contextNotes || []).map((note) => note.text).join("") +
     message.text
   );

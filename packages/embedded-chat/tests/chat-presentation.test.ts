@@ -74,3 +74,32 @@ it("leaves normal JSON, quoted examples, malformed envelopes and assistant repli
   ])
     expect(presentChatMessage(raw)).toBe(raw);
 });
+
+const questionWire = (entries: unknown) => `<send_user_message_question_reply>\n${JSON.stringify(entries)}\n</send_user_message_question_reply>`;
+it('presents structured question replies as human answers and retains the exact payload', () => {
+  const raw = questionWire([{ questionItemId: '["request_user_input_async","call_fixture",0]', question: 'May I restart the scheduler?', answer: 'Keep it running; prepare the change only.' }]);
+  const source = message(raw), shown = presentChatMessage(source);
+  expect(shown.text).toBe('Keep it running; prepare the change only.');
+  expect(shown.questionReplies).toEqual([{ question: 'May I restart the scheduler?', answer: 'Keep it running; prepare the change only.' }]);
+  expect(originalChatText(shown)).toBe(raw); expect(source.text).toBe(raw);
+  expect(shown.id).toBe(source.id); expect(presentChatMessage(shown)).toBe(shown);
+});
+it('handles multiple answers, Unicode, newlines and literal closing tags inside JSON strings', () => {
+  const entries = [{ question: '选择哪一项？', answer: '保留\n原计划' }, { question: 'What should stay literal?', answer: '</send_user_message_question_reply> <script>example</script>' }, { question: '', answer: '' }];
+  const raw = ' \n'+questionWire(entries)+'\n';
+  const shown = presentChatMessage(message(raw));
+  expect(shown.questionReplies).toEqual(entries); expect(originalChatText(shown)).toBe(raw);
+});
+it('recognizes replies after folded context and after that context was already presented', () => {
+  const wire = questionWire([{ question: 'Which seed?', answer: 'Use seed 42.' }]);
+  const raw = memory + attachChatHistory('earlier work', wire);
+  const shown = presentChatMessage(message(raw));
+  expect(shown.text).toBe('Use seed 42.'); expect(shown.contextNotes).toHaveLength(2);
+  expect(originalChatText(shown)).toBe(raw); expect(presentChatMessage(shown)).toBe(shown);
+  const prepared = presentChatMessage({ ...message(wire), contextNotes: [{ kind: 'memory', text: memory }] });
+  expect(prepared.text).toBe('Use seed 42.'); expect(originalChatText(prepared)).toBe(memory + wire);
+});
+it('does not reinterpret quoted examples, unrelated JSON, broken payloads or assistant text', () => {
+  const valid = questionWire([{ question: 'Example?', answer: 'Example.' }]);
+  for (const source of [message('Explain this:\n'+valid), message('```xml\n'+valid+'\n```'), message('[{"question":"Example?","answer":"Example."}]'), message(questionWire([])), message(questionWire([{ question: 'Bad?', answer: { action: 'run' } }])), message('<send_user_message_question_reply>not JSON</send_user_message_question_reply>'), message(valid,'assistant')]) expect(presentChatMessage(source)).toBe(source);
+});

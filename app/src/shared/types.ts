@@ -272,6 +272,9 @@ export interface ImageRef {
 }
 
 export interface TranscriptItem {
+  /** Presentation only: source transport payload and readable replies; never written over provider text. */
+  originalText?: string;
+  questionReplies?: Array<{ question: string; answer: string }>;
   /** Original injected prefix, folded by the UI. Raw provider/store text remains unchanged. */
   contextNotes?: Array<{kind:"memory"|"history";text:string}>;
   /** Stable id (provider item id where available) used for upsert / dedup. */

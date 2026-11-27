@@ -25,6 +25,9 @@ export const chatPermissionModes: {
   },
 ];
 export interface WorkspaceMessage {
+  /** Lossless source for a message whose transport envelope is presented as a human reply. */
+  originalText?: string;
+  questionReplies?: Array<{ question: string; answer: string }>;
   contextNotes?: { kind: "memory" | "history"; text: string }[];
   id: string;
   role: "user" | "assistant" | "tool" | "system" | "thought" | "plan";

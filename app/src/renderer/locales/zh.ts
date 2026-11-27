@@ -1,6 +1,9 @@
 // Simplified Chinese UI strings, keyed by the English text used at the call site.
 // Provider names (Claude Code, Codex), agent names and agent output stay as-is.
 export const zh: Record<string, string> = {
+  'In reply to': '回复的问题',
+  'Original message': '原始消息',
+  'No answer provided': '未提供回答',
   // Time
   'just now': '刚刚',
   '{n}m ago': '{n} 分钟前',
