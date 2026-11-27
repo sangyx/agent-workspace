@@ -1,3 +1,6 @@
+import { normalizeMathMarkdown, mathRemarkPlugins, mathRehypePlugins } from '../../../../packages/embedded-chat/src/math';
+import 'katex/dist/katex.min.css';
+import '../../../../packages/embedded-chat/src/math.css';
 import { memo, useContext, useEffect, useMemo, useRef, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
@@ -114,10 +117,10 @@ function remarkHtmlAsText() {
 // punctuation right before a letter ("**结论。**由…", where CommonMark wants a space after the
 // punctuation) is read as emphasis too: the CJK-friendly rules, for bold/italic and strikethrough.
 const cjk = [remarkCjkFriendly, remarkCjkFriendlyGfmStrikethrough];
-const remarkPlugins = [remarkGfm, ...cjk, remarkBreaks, remarkHtmlAsText, remarkFilePaths];
+const remarkPlugins = [...mathRemarkPlugins, remarkGfm, ...cjk, remarkBreaks, remarkHtmlAsText, remarkFilePaths];
 /** What the user wrote: their @-mentions show as chips too. */
-const userRemarkPlugins = [remarkGfm, ...cjk, remarkBreaks, remarkHtmlAsText, remarkMentions, remarkFilePaths];
-const rehypePlugins = [[rehypeHighlight, { detect: false }]] as never;
+const userRemarkPlugins = [...mathRemarkPlugins, remarkGfm, ...cjk, remarkBreaks, remarkHtmlAsText, remarkMentions, remarkFilePaths];
+const rehypePlugins = [...mathRehypePlugins, [rehypeHighlight, { detect: false }]] as never;
 
 /** Streaming text re-renders at most this often; the final text renders at once. */
 const STREAM_RENDER_MS = 80;
@@ -149,6 +152,7 @@ function useThrottled(text: string, streaming: boolean): string {
  */
 export const Markdown = memo(function Markdown({ text, streaming = false, children, image, mentions = false }: { text: string; streaming?: boolean; children?: ReactNode; image?: (src: string, alt: string) => ReactNode; mentions?: boolean }) {
   const shown = useThrottled(text, streaming);
+  const markdown = useMemo(() => normalizeMathMarkdown(shown), [shown]);
   const [comps, transform] = useMemo(
     () =>
       image
@@ -158,8 +162,8 @@ export const Markdown = memo(function Markdown({ text, streaming = false, childr
   );
   return (
     <div className="md">
-      <ReactMarkdown remarkPlugins={mentions ? userRemarkPlugins : remarkPlugins} rehypePlugins={streaming ? [] : rehypePlugins} components={comps} urlTransform={transform}>
-        {shown}
+      <ReactMarkdown remarkPlugins={mentions ? userRemarkPlugins : remarkPlugins} rehypePlugins={streaming ? mathRehypePlugins : rehypePlugins} components={comps} urlTransform={transform}>
+        {markdown}
       </ReactMarkdown>
       {children}
     </div>

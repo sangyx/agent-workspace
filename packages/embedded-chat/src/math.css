@@ -1,0 +1,26 @@
+/* The KaTeX fonts ship with the renderer; formulas work offline and inherit the theme. */
+.md .katex,
+.chat-markdown .katex {
+  font-size: 1.08em;
+  white-space: normal;
+  overflow-wrap: normal;
+}
+.md .katex-display,
+.chat-markdown .katex-display {
+  max-width: 100%;
+  margin: 0.8em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.2em 0;
+}
+.md .katex-display > .katex,
+.chat-markdown .katex-display > .katex {
+  white-space: nowrap;
+  text-align: left;
+}
+.md .katex-error,
+.chat-markdown .katex-error {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--mono, monospace);
+}
