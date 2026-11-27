@@ -1,6 +1,7 @@
 import {presentTranscriptItem} from '../shared/presentation';
 import {sessionKey} from '../shared/session-identity';
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { basename, join, posix, resolve, sep } from 'node:path';
@@ -142,6 +143,9 @@ export class Workspace {
   private connecting = new Map<string, Promise<LiveSession>>();
   /** Connects under way in the background (opening a page), whose failures stay quiet. */
   private warming = new Set<string>();
+  private historyReads = new Map<string, Promise<TranscriptItem[] | undefined>>();
+  private historyReadAt = new Map<string, number>();
+  private closed = false;
   private capabilities: ProviderCapabilities[] = [];
   private hostStatus = new Map<string, RemoteHostStatus>();
   private changeListeners = new Set<() => void>();
@@ -474,6 +478,7 @@ export class Workspace {
   }
 
   async shutdown(): Promise<void> {
+    this.closed = true;
     clearInterval(this.memSync.timer);
     this.memSync.started = false;
     // Detach first so close-time events are dropped; restart recovery then marks state honestly.
@@ -785,33 +790,63 @@ export class Workspace {
     return task;
   }
 
-  /** Shows an imported session's past conversation right away, before anything is resumed. */
-  /** Shows a saved conversation before it is resumed, and returns it (undefined when it could not be read). */
-  private async previewHistory(task: Task, provider: NativeProvider, nativeSessionId: string): Promise<TranscriptItem[] | undefined> {
-    const adapter = this.opts.adapters[provider];
-    if (!adapter?.readHistory) return undefined;
-    try {
-      const events = await adapter.readHistory(nativeSessionId, task.cwd, task.host);
-      if (this.live.has(task.taskId) || !this.store.data.tasks.includes(task)) return undefined; // resumed meanwhile, or removed
-      const items: TranscriptItem[] = [];
-      for (const e of events) {
-        if (e.type !== 'transcriptItem') continue;
-        const i = items.findIndex((h) => h.id === e.itemId);
-        const images = this.historyImages(e.images, task.host);
-        const item = mergeItem(i === -1 ? undefined : items[i], { id: e.itemId, taskId: task.taskId, role: e.role, text: e.text, ...(images ? { images } : {}), toolLabel: e.toolLabel, toolStatus: e.toolStatus, createdAt: now() }, e.tool);
-        if (i === -1) items.push(item);
-        else items[i] = item;
-      }
-      if (!items.length) return items;
-      // A preview: long sessions show their latest part; resuming restores everything.
-      this.store.setTranscript(task.taskId, items.slice(-400));
+  /** Read saved history without resuming a session or acquiring its writer lock. */
+  async refreshHistory(taskId: string, force = false): Promise<TranscriptItem[] | undefined> {
+    const task = this.findTask(taskId);
+    if (!task || task === this.store.data.mainAgent || this.closed || this.live.has(taskId) || this.connecting.has(taskId)) return;
+    const session = this.currentSession(task);
+    if (!session?.nativeSessionId || !this.opts.adapters[task.provider]?.readHistory) return;
+    const pending = this.historyReads.get(taskId);
+    if (pending) return pending;
+    const at = Date.now();
+    if (!force && at - (this.historyReadAt.get(taskId) ?? 0) < (task.host ? 10_000 : 5_000)) return;
+    this.historyReadAt.set(taskId, at);
+    const read = this.readSavedHistory(task, session).finally(() => {
+      if (this.historyReads.get(taskId) === read) this.historyReads.delete(taskId);
+    });
+    this.historyReads.set(taskId, read);
+    return read;
+  }
+
+  private async readSavedHistory(task: Task, session: SessionRecord): Promise<TranscriptItem[] | undefined> {
+    const adapter = this.opts.adapters[task.provider]!;
+    const saved = this.store.transcript(task.taskId);
+    const before = JSON.stringify(saved);
+    const nativeSessionId = session.nativeSessionId;
+    const events = await adapter.readHistory!(nativeSessionId, task.cwd, task.host);
+    // A send, reconnect, removal or shutdown may have happened during local/SSH I/O.
+    if (this.closed || this.live.has(task.taskId) || this.connecting.has(task.taskId) || !this.store.data.tasks.includes(task) || this.currentSession(task) !== session || session.nativeSessionId !== nativeSessionId || JSON.stringify(this.store.transcript(task.taskId)) !== before) return;
+    const previous = new Map(saved.map((item) => [item.id, item]));
+    const items = new Map<string, TranscriptItem>();
+    for (const event of events) {
+      if (event.type !== 'transcriptItem') continue;
+      const base = items.get(event.itemId) ?? previous.get(event.itemId);
+      const images = this.historyImages(event.images, task.host);
+      const item = mergeItem(base, { id: event.itemId, taskId: task.taskId, role: event.role, text: event.text, ...(images ? { images } : {}), toolLabel: event.toolLabel, toolStatus: event.toolStatus, createdAt: base?.createdAt ?? now() }, event.tool);
+      items.set(item.id, item);
+    }
+    // An empty/temporarily unavailable source must never erase a saved conversation.
+    if (!items.size) return [];
+    const native = [...items.values()];
+    // Keep app-only notes and local approval decisions; native messages remain authoritative.
+    const notes = saved.filter((item) => item.role === 'system' && !items.has(item.id));
+    const next = [...notes, ...native];
+    if (!isDeepStrictEqual(saved, next)) {
+      this.store.setTranscript(task.taskId, next);
       for (const cb of this.transcriptListeners) cb(task.taskId, null);
-      const last = [...items].reverse().find((x) => x.role === 'assistant' && x.text.trim());
+      const last = [...native].reverse().find((item) => item.role === 'assistant' && item.text.trim());
       if (last) task.summary = summaryFor(last.text);
       this.changed();
-      return items;
+    }
+    return native;
+  }
+
+  /** Shows an imported session immediately; subsequent refreshes share this same read-only path. */
+  private async previewHistory(task: Task, _provider: NativeProvider, _nativeSessionId: string): Promise<TranscriptItem[] | undefined> {
+    try {
+      return await this.refreshHistory(task.taskId, true);
     } catch (error) {
-      this.log('history preview failed', provider, error);
+      this.log('history preview failed', task.provider, error);
       return undefined;
     }
   }
@@ -829,7 +864,7 @@ export class Workspace {
 
   /** Replaces an automatic label with a model's label for `text`, unless the name changed meanwhile. */
   private refineLabel(task: Task, text: string): Promise<boolean> {
-    if (!text.trim() || this.opts.demo) return Promise.resolve(false);
+    if (task.nameSource === 'user' || !text.trim() || this.opts.demo) return Promise.resolve(false);
     // No model to ask yet (the CLIs are still being detected right after launch, or signed out): the
     // stopgap stays for now and is marked, so detecting them (or opening the agent) names it then.
     if (!this.canLabel()) {
@@ -1163,18 +1198,18 @@ export class Workspace {
     return live;
   }
 
-  /**
-   * The user opened this agent's page: connect it now, in the background, so the first message
-   * does not wait for the session to start. Opening is not using: the agent keeps its place, its
-   * set-aside flag, unread mark, summary and status, and a failure stays quiet (sending surfaces it).
-   * Only sessions there is something to resume; not the main agent (its chapters start their own
-   * sessions) nor agents on other hosts (a remote process is not cheap to start on a whim).
-   */
+  /** Opening/polling is read-only for native providers; it never claims an external writer. */
   warm(taskId: string): void {
-    const t = this.findTask(taskId);
-    if (!t || t === this.store.data.mainAgent || t.host || this.live.has(taskId) || this.connecting.has(taskId)) return;
-    if (!this.opts.adapters[t.provider] || !this.currentSession(t)?.nativeSessionId) return;
-    void this.connect(taskId, true).catch((error) => this.log('background connect failed', taskId, error));
+    const task = this.findTask(taskId);
+    if (!task || task === this.store.data.mainAgent || this.closed || this.live.has(taskId) || this.connecting.has(taskId)) return;
+    const adapter = this.opts.adapters[task.provider];
+    if (!adapter || !this.currentSession(task)?.nativeSessionId) return;
+    if (adapter.readHistory) {
+      void this.refreshHistory(taskId).catch((error) => this.log('history refresh failed', taskId, error));
+      return;
+    }
+    // Older providers without a read-only history API retain their local warm-start behavior.
+    if (!task.host) void this.connect(taskId, true).catch((error) => this.log('background connect failed', taskId, error));
   }
 
   private async doConnect(taskId: string, background = false): Promise<LiveSession> {
@@ -1215,7 +1250,7 @@ export class Workspace {
         host: task.host,
         title: task.title,
         resumeNativeSessionId: resumeId,
-        loadHistory: !!resumeId && !this.store.transcript(taskId).length,
+        loadHistory: !!resumeId,
         // The main agent gets its role and the workspace tools; it never edits code itself.
         developerInstructions: isMain ? [MAIN_AGENT_PROMPT, instructionsFor(task, injected)].filter(Boolean).join('\n\n') : instructionsFor(task, injected),
         mockScript: task.mockScript,
@@ -1300,12 +1335,7 @@ export class Workspace {
     await this.connect(taskId);
   }
 
-  /**
-   * Picks up what was said elsewhere meanwhile (a session the user went on with in the terminal or
-   * another Claude Code / Codex app): the live session, which knows nothing of it, is closed quietly and the native session
-   * resumed again in the background, which replays its history into the view. Like opening the page,
-   * it changes nothing else about the agent. Not while it is working or waiting on the user.
-   */
+  /** Explicit history refresh, releasing only our idle session when present; never interrupts a turn. */
   async sync(taskId: string): Promise<void> {
     const t = this.task(taskId);
     if (t === this.store.data.mainAgent) throw new Error('The main agent has no session to sync.');
@@ -1317,7 +1347,8 @@ export class Workspace {
       this.live.delete(taskId);
       await l.session.close().catch(() => {});
     }
-    await this.connect(taskId, true);
+    if (this.opts.adapters[t.provider]?.readHistory) await this.refreshHistory(taskId, true);
+    else await this.connect(taskId, true);
   }
 
   async stop(taskId: string): Promise<void> {

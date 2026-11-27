@@ -56,3 +56,24 @@ export function useTick(ms = 30_000): number {
   }, [ms]);
   return t;
 }
+
+/** Refresh the visible conversation on entry, app focus and while it remains open. */
+export function useHistoryRefresh(taskId: string, host?: string): void {
+  useEffect(() => {
+    let pending = false;
+    const refresh = () => {
+      if (pending || document.visibilityState === 'hidden') return;
+      pending = true;
+      void call('task:warm', { taskId }).catch(() => {}).finally(() => { pending = false; });
+    };
+    refresh();
+    const timer = setInterval(refresh, host ? 30_000 : 15_000);
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [taskId, host]);
+}

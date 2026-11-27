@@ -60,3 +60,22 @@ forms requiring fields remain unsupported, as upstream reports.
 Both interfaces include the full-width sub-agent scrolling and attachment remove
 button fixes. Their shared Settings page uses the upstream on/off switches; the
 customized interface includes the matching switch styles.
+
+## Externally continued conversations
+
+Opening a saved native conversation refreshes its history through the provider's
+read-only API instead of resuming it. The visible conversation refreshes again
+on app focus and every 15 seconds (30 seconds for an SSH source), using the same
+provider, native session ID, working directory and machine. Codex uses
+`thread/read`; it never claims the other client's writer lock just to display
+history. Both native interfaces share this behavior.
+
+Reads are coalesced/throttled. Unchanged history emits no transcript reset, and
+failed/empty reads retain the cache. A read completing after local execution,
+session replacement, removal or shutdown is ignored. Native history updates
+preserve row timestamps, local system notes and approval decisions. Project
+assignments, names, archive flags and native session records are not rewritten.
+Explicit Sync releases our idle connection and reads history without resuming;
+busy Deimos turns and pending native approvals are never interrupted. A real
+Send/Resume still acquires the provider session through its normal permission
+workflow and reloads current history.
