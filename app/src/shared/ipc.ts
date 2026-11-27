@@ -2,6 +2,8 @@ import { recognitionSchema, liveVoiceSchema } from './voice-settings';
 import { z } from 'zod';
 import { chatAppearanceSchema } from './chat-appearance';
 import { NATIVE_PROVIDERS } from './types';
+import { CODING_PROVIDERS, type AgentProvider, type CodingProvider } from './types';
+import { ACP_IDS, type AcpProvider } from './acp-agents';
 
 // Every renderer -> main call goes through one of these named channels. The main
 // process validates the payload with the schema before acting on it; the preload
@@ -14,6 +16,9 @@ const text = z.string().max(100_000);
 const nativeProvider = z.enum(NATIVE_PROVIDERS);
 const provider = z.enum([...NATIVE_PROVIDERS, 'mock']);
 /** A stored image (main/attachments.ts names them by their content). */
+/** Any provider an agent can be created on (the ACP CLIs included). */
+const acpProvider = z.enum(ACP_IDS as [AcpProvider, ...AcpProvider[]]);
+const agentProvider = z.enum(['mock', ...CODING_PROVIDERS] as [AgentProvider, ...AgentProvider[]]);
 const imageRef = z.object({ id: z.string().regex(/^[0-9a-f]{24}\.(png|jpg|gif|webp)$/), mediaType: z.string().max(50), name: z.string().max(200).optional() });
 
 export const ipcSchemas = {
@@ -31,6 +36,10 @@ export const ipcSchemas = {
   'ssh:loginCode': z.object({ host, provider: z.enum(['claude', 'codex']), code: z.string().min(4).max(2000) }),
   'ssh:loginCancel': z.object({ host, provider: z.enum(['claude', 'codex']) }),
   'ssh:connect': z.object({ host }),
+  'acp:login': z.object({ provider: acpProvider, host: host.optional(), mode: z.literal('code').optional() }),
+  'acp:loginCode': z.object({ provider: acpProvider, host: host.optional(), code: z.string().min(4).max(2000) }),
+  'acp:loginWait': z.object({ provider: acpProvider, host: host.optional() }),
+  'acp:loginCancel': z.object({ provider: acpProvider, host: host.optional() }),
   'ssh:terminal': z.object({ host }),
   'task:create': z.object({
     projectId: id,
@@ -49,14 +58,14 @@ export const ipcSchemas = {
   /** An image pasted, dropped or picked in a message box (already converted and shrunk by the renderer). */
   'attachment:save': z.object({ bytes: z.instanceof(Uint8Array).refine((b) => b.length > 0 && b.length <= 4_000_000, 'The image is too large.'), name: z.string().max(500).optional() }),
   'task:interrupt': z.object({ taskId: id }),
-  'task:models': z.object({ taskId: id }),
+  'task:models': z.object({ taskId: id, fresh: z.boolean().optional() }),
   'task:setModel': z.object({ taskId: id, model: z.string().min(1).max(200).nullable() }),
   'task:setReasoningEffort': z.object({ taskId: id, effort: z.string().min(1).max(80).nullable() }),
   'task:shell': z.object({ taskId: id, command: text.min(1) }),
   'memory:linkPreview': z.object({ host: z.union([z.literal('local'), z.string().regex(/^[A-Za-z0-9_][A-Za-z0-9_.@-]{0,252}$/)]) }),
   'memory:link': z.object({ host: z.union([z.literal('local'), z.string().regex(/^[A-Za-z0-9_][A-Za-z0-9_.@-]{0,252}$/)]) }),
   'memory:unlink': z.object({ host: z.union([z.literal('local'), z.string().regex(/^[A-Za-z0-9_][A-Za-z0-9_.@-]{0,252}$/)]) }),
-  'memory:resolveShare': z.object({ host: z.union([z.literal('local'), z.string().regex(/^[A-Za-z0-9_][A-Za-z0-9_.@-]{0,252}$/)]), kind: z.enum(['claude-md', 'claude-user', 'codex-md']), how: z.enum(['resume', 'adopt']) }),
+  'memory:resolveShare': z.object({ host: z.union([z.literal('local'), z.string().regex(/^[A-Za-z0-9_][A-Za-z0-9_.@-]{0,252}$/)]), kind: z.enum(['claude-md', 'claude-user', 'codex-md', 'opencode-md', 'gemini-md']), how: z.enum(['resume', 'adopt']) }),
   'memory:resolveConflict': z.object({ id, take: z.enum(['source', 'mine']) }),
   'memory:restoreNote': z.object({ id }),
   'memory:backups': z.object({ host: z.union([z.literal('local'), z.string().regex(/^[A-Za-z0-9_][A-Za-z0-9_.@-]{0,252}$/)]).optional() }),
@@ -69,7 +78,7 @@ export const ipcSchemas = {
   'skills:remove': z.object({ name: z.string().min(1).max(64) }),
   'task:rewind': z.object({ taskId: id, messageId: id }),
   'task:forkPoints': z.object({ taskId: id }),
-  'task:fork': z.object({ taskId: id, upToMessageId: id.optional(), isolate: z.boolean(), instruction: text.optional() }),
+  'task:fork': z.object({ taskId: id, upToMessageId: id.optional(), isolate: z.boolean(), instruction: text.optional(), provider: agentProvider.optional() }),
   'task:retry': z.object({ taskId: id }),
   'task:resume': z.object({ taskId: id }),
   'task:warm': z.object({ taskId: id }),
@@ -138,6 +147,7 @@ export const ipcSchemas = {
   'file:stat': z.object({ taskId: id, path: z.string().min(1).max(4096), allowOutside: z.boolean().optional() }),
   'task:setAside': z.object({ taskId: z.string(), on: z.boolean() }),
   'task:remoteControl': z.object({ taskId: z.string(), on: z.boolean() }),
+  'task:remoteControlRevoke': z.object({ taskId: z.string(), clientId: z.string().min(1).max(200) }),
   'apps:installed': z.object({}),
   'apps:open': z.object({ appId: z.string().regex(/^[a-z-]{2,40}$/), taskId: id, path: z.string().min(1).max(4096).optional(), line: z.number().int().min(1).max(10_000_000).optional(), allowOutside: z.boolean().optional() }),
   'memory:add': z.object({
@@ -164,7 +174,7 @@ export const ipcSchemas = {
   'memory:scanImports': z.object({}),
   'memory:import': z.object({ items: z.array(z.object({ key: z.string().min(1).max(5000), scope: z.enum(['global', 'project']), projectId: id.optional() })).min(1).max(1000) }),
   'memory:syncNow': z.object({}),
-  'settings:update': z.object({ recognition: recognitionSchema.optional(), liveVoice: liveVoiceSchema.optional(), chatAppearance: chatAppearanceSchema.optional(), onboarding: z.object({ started: z.boolean().optional(), dismissed: z.boolean().optional(), voiceSkipped: z.boolean().optional(), remoteSkipped: z.boolean().optional(), languageChosen: z.boolean().optional() }).optional(), overviewSlots: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(4), z.literal(6), z.literal(9)]).optional(), alwaysConfirmVoice: z.boolean().optional(), autoListen: z.boolean().optional(), language: z.enum(['en', 'zh']).optional(), permissionMode: z.enum(['auto', 'edits', 'ask']).optional(), mainAgent: z.enum(['claude', 'codex', 'off']).optional(), sttModel: z.string().regex(/^[\w.:-]{1,80}$/).optional(), routerModel: z.string().regex(/^[\w.:-]{1,80}$/).optional(), voicePauseMs: z.number().int().min(800).max(8000).optional(), micMode: z.enum(['open', 'toggle', 'hold', 'both']).optional(), micShortcut: z.string().regex(/^((Meta|Control|Alt|Shift)\+){0,4}(Space|[A-Z0-9]|F([1-9]|1[0-9])|Up|Down|Left|Right)$/).optional(), mainChapters: z.enum(['auto', 'off']).optional(), memorySync: z.boolean().optional(), openTurns: z.number().int().min(0).max(5).optional(), toolsOpen: z.enum(['folded', 'failed', 'all']).optional(), idleAfterDays: z.number().int().min(0).max(30).optional(), mainCallsPerTurn: z.number().int().min(5).max(100).optional(), mainForksPerTurn: z.number().int().min(1).max(5).optional(), commandTimeoutMin: z.number().int().min(1).max(120).optional(), keepAwake: z.boolean().optional() }),
+  'settings:update': z.object({ recognition: recognitionSchema.optional(), liveVoice: liveVoiceSchema.optional(), chatAppearance: chatAppearanceSchema.optional(), onboarding: z.object({ started: z.boolean().optional(), dismissed: z.boolean().optional(), voiceSkipped: z.boolean().optional(), remoteSkipped: z.boolean().optional(), languageChosen: z.boolean().optional() }).optional(), overviewSlots: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(4), z.literal(6), z.literal(9)]).optional(), alwaysConfirmVoice: z.boolean().optional(), autoListen: z.boolean().optional(), language: z.enum(['en', 'zh']).optional(), permissionMode: z.enum(['auto', 'edits', 'ask']).optional(), mainAgent: z.enum(['off', ...CODING_PROVIDERS] as ['off', ...CodingProvider[]]).optional(), sttModel: z.string().regex(/^[\w.:-]{1,80}$/).optional(), routerModel: z.string().regex(/^[\w.:-]{1,80}$/).optional(), voicePauseMs: z.number().int().min(800).max(8000).optional(), micMode: z.enum(['open', 'toggle', 'hold', 'both']).optional(), micShortcut: z.string().regex(/^((Meta|Control|Alt|Shift)\+){0,4}(Space|[A-Z0-9]|F([1-9]|1[0-9])|Up|Down|Left|Right)$/).optional(), mainChapters: z.enum(['auto', 'off']).optional(), memorySync: z.boolean().optional(), openTurns: z.number().int().min(0).max(5).optional(), toolsOpen: z.enum(['folded', 'failed', 'all']).optional(), idleAfterDays: z.number().int().min(0).max(30).optional(), mainCallsPerTurn: z.number().int().min(5).max(100).optional(), mainForksPerTurn: z.number().int().min(1).max(5).optional(), commandTimeoutMin: z.number().int().min(1).max(120).optional(), keepAwake: z.boolean().optional() }),
   'capabilities:refresh': z.object({ localOnly: z.boolean().optional() }),
   'provider:login': z.object({ provider: z.enum(['claude', 'codex']), method: z.enum(['claudeai', 'console', 'chatgpt', 'device']).optional() }),
   'provider:loginCancel': z.object({ provider: z.enum(['claude', 'codex']) }),

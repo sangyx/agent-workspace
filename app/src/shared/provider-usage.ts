@@ -1,3 +1,4 @@
+import { CODING_PROVIDERS } from './types';
 import type { AgentProvider, ProviderLimits, Task, WorkspaceSnapshot } from './types';
 
 export const USAGE_PROVIDERS = ['codex', 'claude', 'antigravity'] as const;
@@ -9,7 +10,7 @@ export function limitsByProvider(limits: Record<string, ProviderLimits>): Record
   const time = (at: string) => Date.parse(at) || 0;
   for (const [key, value] of Object.entries(limits)) {
     const provider = value.provider ?? key.split('@')[0] as AgentProvider;
-    if (!['codex', 'claude', 'antigravity', 'mock'].includes(provider)) continue;
+    if (![...CODING_PROVIDERS, 'mock'].includes(provider)) continue;
     if (!value.windows.length) continue;
     if (grouped[provider] && time(grouped[provider].at) >= time(value.at)) continue;
     const { host: _host, ...reading } = value;
@@ -24,7 +25,8 @@ export function providerUsage(snapshot: Pick<WorkspaceSnapshot, 'limits' | 'task
   if (snapshot.main && !tasks.some(t => t.taskId === snapshot.main!.taskId)) tasks.push(snapshot.main);
   const seen = new Set<string>();
   const unique = tasks.filter(t => !seen.has(t.taskId) && !!seen.add(t.taskId));
-  return USAGE_PROVIDERS.map(provider => {
+  const providers: AgentProvider[] = [...USAGE_PROVIDERS, ...CODING_PROVIDERS.filter(provider => !(USAGE_PROVIDERS as readonly string[]).includes(provider) && (limits[provider] || unique.some(task => task.provider === provider && task.usage)))];
+  return providers.map(provider => {
     const tracked = unique.filter(t => t.provider === provider && t.usage);
     return {
       provider,

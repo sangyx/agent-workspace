@@ -1,3 +1,6 @@
+import { ACP_AGENTS } from '../shared/acp-agents';
+import { AcpAdapter } from './providers/acp';
+import { AcpLogins } from './providers/acp-login';
 import { LiveVoiceService } from './live-voice';
 import {presentTranscriptItem} from '../shared/presentation';
 import { execFileSync } from "node:child_process";
@@ -150,12 +153,19 @@ export function createElectronWorkspaceHost(
   let notifyModels = () => {};
   const localStt = new LocalStt(options.modelsDir, () => notifyModels());
   const openai = key ? new OpenAiClient(key) : undefined;
+  const acpAdapters: Record<string, AcpAdapter> = process.env.AMW_ACP_OFF === '1' ? {} : Object.fromEntries(ACP_AGENTS.map(spec => [spec.id, new AcpAdapter(spec)]));
+  const antigravityModels = new AntigravityAdapter();
+  if (acpAdapters.antigravity && !process.env.AMW_ACP_COMMAND_ANTIGRAVITY) {
+    const activeModels = acpAdapters.antigravity.listModels.bind(acpAdapters.antigravity);
+    acpAdapters.antigravity.listModels = host => activeModels(host).catch(() => antigravityModels.listModels(host));
+  }
+  const acpOf = (provider: string): AcpAdapter => { const adapter = acpAdapters[provider]; if (!adapter) throw new Error(`${provider} is not a coding agent reached through ACP.`); return adapter; };
   const workspace = new Workspace({
     dataDir,
     adapters: {
       claude: new ClaudeAdapter(),
       codex: new CodexAdapter(),
-      antigravity: new AntigravityAdapter(),
+      ...acpAdapters,
       mock: new MockAdapter(join(dataDir, "mock-sessions")),
     },
     openai,
@@ -173,6 +183,7 @@ export function createElectronWorkspaceHost(
       : {}),
   });
   notifyModels = () => workspace.notifyChanged();
+  const acpLogins = new AcpLogins((_provider, host) => void (host ? workspace.checkHost(host, { quiet: true }) : workspace.refreshCapabilities({ localOnly: true })).catch(() => {}));
   const keySource = (): "env" | "file" | null =>
     envOpenAiKey() ? "env" : key ? "file" : null;
   if (key)
@@ -327,6 +338,11 @@ export function createElectronWorkspaceHost(
     "ssh:loginCancel": (i: { host: string; provider: "claude" | "codex" }) =>
       cancelHostLogin(i.host, i.provider),
     "ssh:connect": (i: { host: string }) => workspace.connectHost(i.host),
+    'acp:login': (i: { provider: string; host?: string; mode?: 'code' }) => { if (i.host) workspace.requireHost(i.host); return acpLogins.start(acpOf(i.provider), i.host, i.mode); },
+    'acp:loginCode': (i: { provider: string; host?: string; code: string }) => acpLogins.sendCode(acpOf(i.provider), i.host, i.code),
+    'acp:loginWait': (i: { provider: string; host?: string }) => acpLogins.wait(acpOf(i.provider), i.host),
+    'acp:loginCancel': (i: { provider: string; host?: string }) => acpLogins.cancel(acpOf(i.provider), i.host),
+    'task:remoteControlRevoke': (i: { taskId: string; clientId: string }) => workspace.revokeRemoteDevice(i.taskId, i.clientId),
     "ssh:terminal": (i: { host: string }) => workspace.openHostTerminal(i.host),
     "task:create": (i: Parameters<Workspace["createTask"]>[0]) =>
       workspace.createTask(i),
@@ -346,7 +362,7 @@ export function createElectronWorkspaceHost(
     "attachment:save": (i: { bytes: Uint8Array; name?: string }) =>
       workspace.attachments.save(i.bytes, i.name),
     "task:interrupt": (i: { taskId: string }) => workspace.interrupt(i.taskId),
-    "task:models": (i: { taskId: string }) => workspace.listModels(i.taskId),
+    "task:models": (i: { taskId: string; fresh?: boolean }) => workspace.listModels(i.taskId, i.fresh),
     "task:setModel": (i: { taskId: string; model: string | null }) =>
       workspace.setModel(i.taskId, i.model ?? undefined),
     "task:setReasoningEffort": (i: {
@@ -361,7 +377,7 @@ export function createElectronWorkspaceHost(
     "memory:unlink": (i: { host: string }) => workspace.unlinkMachine(i.host),
     "memory:resolveShare": (i: {
       host: string;
-      kind: "claude-md" | "claude-user" | "codex-md";
+      kind: "claude-md" | "claude-user" | "codex-md" | "opencode-md" | "gemini-md";
       how: "resume" | "adopt";
     }) => workspace.resolveShare(i.host, i.kind, i.how),
     "memory:resolveConflict": (i: { id: string; take: "source" | "mine" }) =>
@@ -386,6 +402,7 @@ export function createElectronWorkspaceHost(
       upToMessageId?: string;
       isolate: boolean;
       instruction?: string;
+      provider?: import('../shared/types').AgentProvider;
     }) => workspace.forkTask(i.taskId, i),
     "task:retry": (i: { taskId: string }) => workspace.retry(i.taskId),
     "task:resume": (i: { taskId: string }) => workspace.resume(i.taskId),

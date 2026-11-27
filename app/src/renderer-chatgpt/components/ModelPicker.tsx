@@ -1,3 +1,4 @@
+import { modelName as sharedModelName } from '../../renderer/components/ModelPicker';
 import { useEffect, useRef, useState } from 'react';
 import type { ModelOption, ReasoningEffort, SessionRecord, Task } from '../../shared/types';
 import { call, errorText } from '../api';
@@ -11,10 +12,7 @@ const known = new Map<string, string>();
 export function modelName(id: string): string {
   const k = known.get(id);
   if (k) return k;
-  const c = /^claude-([a-z]+)-(\d+)(?:-(\d+))?(?:-\d{8})?$/.exec(id);
-  if (c) return `${c[1][0].toUpperCase()}${c[1].slice(1)} ${c[2]}${c[3] ? `.${c[3]}` : ''}`;
-  if (/^gpt-/i.test(id)) return id.split('-').map((p, i) => (i === 0 ? 'GPT' : p[0] ? p[0].toUpperCase() + p.slice(1) : p)).join('-');
-  return id;
+  return sharedModelName(id);
 }
 
 const matches = (o: ModelOption, id?: string) => !!id && (o.id === id || o.resolves === id);
@@ -43,13 +41,15 @@ export function ModelPicker({ task, session }: { task: Task; session?: SessionRe
   const trigger = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!open) return;
-    if (!models)
-      call('task:models', { taskId: task.taskId }).then(
+    let current = true;
+    setError('');
+    call('task:models', { taskId: task.taskId, fresh: true }).then(
         (list) => {
+          if (!current) return;
           for (const o of list) if (!o.isDefault) for (const id of [o.id, o.resolves]) if (id) known.set(id, o.label);
           setModels(list);
         },
-        (e) => setError(errorText(e)),
+        (e) => { if (current) setError(errorText(e)); },
       );
     const away = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
     // Esc closes just this (before the app's Esc, which leaves the agent view).
@@ -62,10 +62,11 @@ export function ModelPicker({ task, session }: { task: Task; session?: SessionRe
     window.addEventListener('mousedown', away);
     window.addEventListener('keydown', esc, true);
     return () => {
+      current = false;
       window.removeEventListener('mousedown', away);
       window.removeEventListener('keydown', esc, true);
     };
-  }, [open]);
+  }, [open, task.taskId]);
   useEffect(() => setModels(null), [task.provider, task.host]);
 
   const current = task.activeModel ?? task.model;

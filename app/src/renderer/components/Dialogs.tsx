@@ -1,11 +1,14 @@
 import {sessionTitle,isApprovalReviewTitle,filterImportCandidates} from '../../shared/presentation';
 import {sessionKey} from '../../shared/session-identity';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { NATIVE_PROVIDERS, type AgentProvider, type ForkPoint, type ModelOption, type NativeProvider, type NativeSessionInfo, type Task, type WorkspaceSnapshot } from '../../shared/types';
+import { CODING_PROVIDERS, type CodingProvider, NATIVE_PROVIDERS, type AgentProvider, type ForkPoint, type ModelOption, type NativeProvider, type NativeSessionInfo, type Task, type WorkspaceSnapshot } from '../../shared/types';
 import { call, errorText } from '../api';
 import { setDraftText } from '../drafts';
 import { timeAgo } from '../state';
 import { Icon, labelOf, PROVIDER_LABEL, ProviderTag, shortVersion } from './bits';
+import { ACP_IDS, isAcpProvider } from '../../shared/acp-agents';
+import { ProviderPicker } from './ProviderPicker';
+import { choiceControl } from '../choice-layout';
 import { t } from '../i18n';
 import { defaultProject, ProjectChooser } from './ProjectChooser';
 
@@ -92,8 +95,7 @@ export function ConfirmDialog({
 
 /** `onContinue`: switch to Continue a session… instead, for someone who meant to pick up an existing conversation. */
 export function NewTaskDialog({ snapshot, initialProjectId, onClose, onCreated, onContinue }: { snapshot: WorkspaceSnapshot; initialProjectId?: string; onClose: () => void; onCreated: (taskId: string) => void; onContinue?: (projectId: string) => void }) {
-  const providers = snapshot.demo ? ([...NATIVE_PROVIDERS, 'mock'] as const) : NATIVE_PROVIDERS;
-  const firstAvailable = providers.find((p) => snapshot.capabilities.find((c) => c.provider === p)?.available) ?? providers[0];
+  const firstAvailable = NATIVE_PROVIDERS.find(p => snapshot.capabilities.find(c => c.provider === p)?.available) ?? NATIVE_PROVIDERS[0];
   // A project menu supplies its target; global creation still offers the most recently used project.
   const [projectId, setProjectId] = useState(() => snapshot.projects.some(p => p.projectId === initialProjectId) ? initialProjectId! : defaultProject(snapshot));
   const [provider, setProvider] = useState<AgentProvider>(firstAvailable);
@@ -110,6 +112,8 @@ export function NewTaskDialog({ snapshot, initialProjectId, onClose, onCreated, 
   // On a remote folder, what counts is the CLI installed on that machine.
   const capOf = (p: AgentProvider) => (project?.host ? remote?.capabilities.find((c) => c.provider === p) : snapshot.capabilities.find((c) => c.provider === p));
   const usable = (p: AgentProvider) => !!capOf(p)?.available && (!project?.host || remote?.ssh === 'ok');
+  // Claude Code and Codex always; an ACP CLI (OpenCode, Antigravity…) once it is installed where the agent would run.
+  const providers: AgentProvider[] = [...CODING_PROVIDERS.filter((p) => !isAcpProvider(p) || !!capOf(p)?.available), ...(snapshot.demo ? (['mock'] as const) : [])];
   const cap = capOf(provider);
   const providerUsable = usable(provider);
   useEffect(() => {
@@ -172,20 +176,7 @@ export function NewTaskDialog({ snapshot, initialProjectId, onClose, onCreated, 
         <details className="new-chat-model" data-testid="new-chat-model" onToggle={(e) => setModelOpen(e.currentTarget.open)}>
           <summary><span>{t('Model')}</span><span className="truncate">{model?.label ?? t('Default model')}</span></summary>
           <fieldset aria-label={t('Provider')}>
-            <div className="row new-chat-providers">
-              {providers.map((p) => {
-                const c = capOf(p);
-                return (
-                  <label key={p} className={`radio${usable(p) ? '' : ' disabled'}${provider === p ? ' selected' : ''}`} title={c?.detail}>
-                    <input type="radio" name="provider" checked={provider === p} disabled={!usable(p)} onChange={() => {
-                      setProvider(p);
-                      setModel(null);
-                    }} /> <span className="provider-name">{PROVIDER_LABEL[p]}</span>
-                    {c?.version ? <span className="muted small provider-version">{shortVersion(c.version)}</span> : null}
-                  </label>
-                );
-              })}
-            </div>
+            <ProviderPicker providers={providers} value={provider} onChange={(next) => { setProvider(next); setModel(null); }} capOf={capOf} usable={usable} note={(p) => project?.host && remote?.ssh !== 'ok' ? t('not connected') : capOf(p)?.available ? t('unavailable') : t('not installed')} />
           </fieldset>
           <select className="input select" aria-label={t('Model')} value={model?.id ?? ''} disabled={!modelCatalog?.models?.length} onChange={(e) => {
             setModel(modelCatalog?.models?.find((option) => option.id === e.target.value) ?? null);
@@ -243,6 +234,7 @@ export function ImportDialog({ snapshot, initialProjectId, onClose, onImported }
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [provider, setProvider] = useState<'all' | NativeProvider>('all');
+  const offered = NATIVE_PROVIDERS.filter(p => !isAcpProvider(p) || snapshot.capabilities.find(c => c.provider === p)?.available || snapshot.remoteHosts.some(h => h.capabilities.some(c => c.provider === p && c.available)));
   const [importing, setImporting] = useState('');
   const [showAutomated, setShowAutomated] = useState(() => readPref(AUTOMATED_KEY) === '1');
   const initialProject = snapshot.projects.find(p => p.projectId === initialProjectId);
@@ -326,13 +318,24 @@ export function ImportDialog({ snapshot, initialProjectId, onClose, onImported }
           </select>
         ) : null}
         <input className="input grow" autoFocus placeholder={t('Search title, folder, provider or date')} value={query} onChange={(e) => setQuery(e.target.value)} data-testid="session-search" />
-        <div className="segmented">
-          {(['all', ...NATIVE_PROVIDERS] as const).map((p) => (
-            <button key={p} className={provider === p ? 'on' : ''} onClick={() => setProvider(p)}>
-              {p === 'all' ? t('All') : PROVIDER_LABEL[p]}
-            </button>
-          ))}
-        </div>
+        {choiceControl(offered.length + 1) === 'grid' ? (
+          <div className="segmented">
+            {(['all', ...offered] as const).map((p) => (
+              <button key={p} className={provider === p ? 'on' : ''} onClick={() => setProvider(p)}>
+                {p === 'all' ? t('All') : PROVIDER_LABEL[p]}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <select className="input select" value={provider} onChange={(e) => setProvider(e.target.value as 'all' | CodingProvider)} title={t('Coding agent')} data-testid="session-provider">
+            <option value="all">{t('All agents')}</option>
+            {offered.map((p) => (
+              <option key={p} value={p}>
+                {PROVIDER_LABEL[p]}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
       {automatedCount || showAutomated ? (
         <label className="check small muted" title={t('Started by an agent for itself: claude -p, codex exec, Codex sub-agents.')}>
@@ -431,6 +434,13 @@ export function ForkDialog({ snapshot, task, onClose, onForked }: { snapshot: Wo
   const [isolate, setIsolate] = useState(!!project?.isGitRepo);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // Which CLI continues it: its own, or another one installed here (given the conversation as text).
+  const [onto, setOnto] = useState<AgentProvider>(task.provider);
+  const capOf = (p: AgentProvider) => snapshot.capabilities.find((c) => c.provider === p);
+  const usable = (p: AgentProvider) => (p === task.provider ? capOf(p)?.fork !== false : !!capOf(p)?.available);
+  const ontoChoices: AgentProvider[] = capOf(task.provider)?.forkElsewhere
+    ? [...new Set<AgentProvider>([...CODING_PROVIDERS.filter((p) => !isAcpProvider(p) || !!capOf(p)?.available), ...(snapshot.demo ? (['mock'] as const) : []), task.provider])]
+    : [];
   useEffect(() => {
     call('task:forkPoints', { taskId: task.taskId })
       .then((p) => setPoints([...p].reverse()))
@@ -444,7 +454,7 @@ export function ForkDialog({ snapshot, task, onClose, onForked }: { snapshot: Wo
     setBusy(true);
     setError('');
     try {
-      const t = await call('task:fork', { taskId: task.taskId, upToMessageId: upTo || undefined, isolate: isolate && !!project?.isGitRepo });
+      const t = await call('task:fork', { taskId: task.taskId, upToMessageId: upTo || undefined, isolate: isolate && !!project?.isGitRepo, provider: onto !== task.provider ? onto : undefined });
       // Forked back to before a message: that message waits in the new agent's reply box, to edit and send.
       const prompt = upTo ? points?.find((p) => p.upToMessageId === upTo)?.prompt : undefined;
       if (prompt) setDraftText(t.taskId, prompt);
@@ -459,6 +469,12 @@ export function ForkDialog({ snapshot, task, onClose, onForked }: { snapshot: Wo
   return (
     <Modal title={t('Fork {name}', { name: labelOf(task) })} onClose={onClose}>
       <div className="muted small">{t('A new agent continues from a copy; {name} stays as it is.', { name: labelOf(task) })}</div>
+      {ontoChoices.length > 1 ? (
+        <div className="field">
+          <label>{t('Continue in')}</label>
+          <ProviderPicker providers={ontoChoices} value={onto} onChange={setOnto} capOf={capOf} usable={usable} name="fork-onto" testId="fork-onto" />
+        </div>
+      ) : null}
       <div className="field">
         <label>{t('Fork from')}</label>
         <div className="fork-points" data-testid="fork-points">

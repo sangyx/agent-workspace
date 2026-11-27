@@ -1,13 +1,19 @@
 // Normalized application types shared by the main process and the renderer.
 // These are NOT provider wire formats; provider ids are carried alongside.
 import type { PermissionKind, PlanInfo, ToolCallInfo, ToolContent } from './content';
+import { ACP_IDS, type AcpProvider } from './acp-agents';
 
 export type { DiffHunk, FileDiff, PermissionKind, PlanEntry, PlanInfo, ToolCallInfo, ToolContent, ToolKind } from './content';
 
-export const NATIVE_PROVIDERS = ['claude', 'codex', 'antigravity'] as const;
-export type NativeProvider = (typeof NATIVE_PROVIDERS)[number];
-export type AgentProvider = NativeProvider | 'mock';
-/** Provider-defined identifier, validated against the selected model's catalog. */
+/** The real coding agents: Claude Code and Codex natively, and the CLIs reached through ACP (shared/acp-agents.ts). */
+export type CodingProvider = 'claude' | 'codex' | AcpProvider;
+export type AgentProvider = CodingProvider | 'mock';
+/** Every real coding agent, in the order they are offered. */
+export const CODING_PROVIDERS: CodingProvider[] = ['claude', 'codex', ...ACP_IDS];
+/** Compatibility names for embedding hosts and existing extensions. */
+export const NATIVE_PROVIDERS = CODING_PROVIDERS;
+export type NativeProvider = CodingProvider;
+/** Provider-defined reasoning identifier. */
 export type ReasoningEffort = string;
 export type AgentStatus =
   | 'idle'
@@ -147,6 +153,8 @@ export interface LimitWindow {
   usedPercent: number;
   /** When it resets, ms since the epoch. */
   resetsAt?: number;
+  /** Which models it covers, when an account has windows per group of models (Antigravity: "Gemini", "Claude and GPT"). */
+  label?: string;
 }
 
 /** A provider account's usage limits as last seen, and when. */
@@ -297,7 +305,7 @@ export interface TranscriptItem {
   /** Structured tool call (role 'tool'). */
   tool?: ToolCallInfo;
   /** A decision the user made here (role 'system'): an approval given or a question answered. */
-  decision?: { kind: 'approval' | 'answer'; label: string; about?: string; /** Every option offered, the chosen ones marked: the decision space. */ options?: Array<{ label: string; chosen: boolean }> };
+  decision?: { kind: 'approval' | 'answer'; label: string; about?: string; /** An approval refused (the option chosen is a reject / deny / decline). */ declined?: boolean; /** Every option offered, the chosen ones marked: the decision space. */ options?: Array<{ label: string; chosen: boolean }> };
   streaming?: boolean;
   /** A system item that starts a new chapter of the main agent's conversation (and why). */
   chapter?: { reason: 'manual' | 'idle' | 'long' };
@@ -393,8 +401,34 @@ export interface ProviderCapabilities {
   structuredQuestions: boolean;
   /** Saved conversations on this computer can be forked (the adapter implements forkPoints / forkSession). */
   fork?: boolean;
+  /** Its saved conversations can be forked onto another CLI (the adapter reads them back: readHistory). */
+  forkElsewhere?: boolean;
+  /** Answers side questions ("btw") without entering the conversation; unset = yes. */
+  sideQuestions?: boolean;
   /** Login state read from the CLI's own status command (never its credentials). */
   auth?: { loggedIn: boolean; method?: string };
+  /** Codex: Remote Control (pairing with the ChatGPT app) can be offered here (signed in with ChatGPT). */
+  remoteControl?: boolean;
+}
+
+/**
+ * Codex Remote Control for one live agent: its app-server paired (or pairing) with the ChatGPT app.
+ * `code` is the short-lived manual pairing code, shown until a device claims it or it expires.
+ */
+export interface CodexRemoteControl {
+  /** The app-server's link to the ChatGPT service (Codex's RemoteControlConnectionStatus). */
+  status: 'connecting' | 'connected' | 'errored' | 'disabled';
+  /** A device claimed the current code. */
+  paired: boolean;
+  code?: string;
+  /** What the QR code carries (scanned in the ChatGPT app instead of typing `code`). */
+  qr?: string;
+  /** When `code` stops working (ISO). */
+  expiresAt?: string;
+  /** This computer, as the ChatGPT app lists it. */
+  serverName?: string;
+  /** Devices paired with this computer (Codex's remote-control clients). */
+  devices?: Array<{ id: string; name: string; lastSeenAt?: string }>;
 }
 
 export interface NativeSessionInfo {
@@ -418,7 +452,7 @@ export type RouteDecision =
       kind: 'create';
       proposedTitle: string;
       projectId?: string;
-      provider?: NativeProvider;
+      provider?: CodingProvider;
       reason: string;
     }
   | { kind: 'coordinator'; reason: string }
@@ -462,7 +496,8 @@ export interface Settings {
   /** Default permission mode for new agents. */
   permissionMode?: PermissionMode;
   /** Which CLI runs the main agent; unset = the first one installed and signed in. */
-  mainAgent?: 'claude' | 'codex' | 'off';
+  /** The main agent's CLI (any coding provider), or off. */
+  mainAgent?: CodingProvider | 'off';
   /** Start a new chapter of the main agent's conversation by itself after a long pause or a long chapter (default on). */
   mainChapters?: 'auto' | 'off';
   /** Speech-to-text model (OpenAI id). */
@@ -585,6 +620,8 @@ export interface WorkspaceSnapshot {
   connectedTaskIds: string[];
   /** Live Claude sessions with Remote Control on: taskId → the session's link (claude.ai/code, the Claude app). */
   remoteControl: Record<string, string>;
+  /** Live Codex agents with Remote Control on: taskId → pairing and connection state (the ChatGPT app). */
+  codexRemote: Record<string, CodexRemoteControl>;
   /**
    * Per agent: the title of the last task on its session map (the model's grouping, as cached). What an
    * agent is on, for the sidebar row and the agent's header; absent until a map has been made.

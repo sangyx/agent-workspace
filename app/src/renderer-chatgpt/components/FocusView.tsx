@@ -18,7 +18,7 @@ import { ModelPicker } from './ModelPicker';
 import { AgentMemoryPanel, MemoryChip, RememberButton, RememberDialog } from './SessionMemory';
 import { menuAt, menuKey, useContextMenu, type MenuItem } from './ContextMenu';
 import { useConversationActions } from '../../renderer/components/ConversationActions';
-import { agentMenuItems, EditableAgentName, type AgentField } from './AgentMenu';
+import { agentMenuItems, canFork, EditableAgentName, type AgentField } from './AgentMenu';
 import { RetryNotice } from './Retry';
 import { UsageChips } from './SessionUsage';
 import { FindBar } from './FindBar';
@@ -255,7 +255,7 @@ export function FocusView({ snapshot, task, transcript, now, onOpen, onVoiceSlot
   const [syncing, setSyncing] = useState(false);
   const [removing, setRemoving] = useState(false);
   // Conversations on this computer can be forked once saved, when their provider supports it.
-  const canFork = !isMainAgent(task) && !task.host && !!snapshot.capabilities.find((c) => c.provider === task.provider)?.fork && !!session?.nativeSessionId;
+  const forkable = canFork(snapshot, task);
   const [error, setError] = useState('');
   const run = (fn: () => Promise<unknown>) => {
     setError('');
@@ -329,7 +329,7 @@ export function FocusView({ snapshot, task, transcript, now, onOpen, onVoiceSlot
       <section className="focus-main">
         <header className="focus-head drag">
           <div className="focus-name">
-            <TaskName key={task.taskId} task={task} tasks={snapshot.tasks} onFork={canFork ? () => setForking(true) : undefined} onControls={() => setChatControls(true)} />
+            <TaskName key={task.taskId} task={task} tasks={snapshot.tasks} onFork={forkable ? () => setForking(true) : undefined} onControls={() => setChatControls(true)} />
           </div>
           <button
             className="icon-btn task-index-toggle"
@@ -428,7 +428,7 @@ export function FocusView({ snapshot, task, transcript, now, onOpen, onVoiceSlot
                   <Icon name="refresh" />
                 </button>
               ) : null}
-              {canFork ? (
+              {forkable ? (
                 <button
                   className="btn btn-icon"
                   aria-label={t('Fork')}
@@ -441,7 +441,7 @@ export function FocusView({ snapshot, task, transcript, now, onOpen, onVoiceSlot
                 </button>
               ) : null}
               {/* Claude Code's Remote Control: this agent in the Claude app on a phone, still running here. */}
-              {(task.provider === 'claude' || task.provider === 'mock') && !task.host && !isMainAgent(task) ? <RemoteControlButton task={task} url={snapshot.remoteControl?.[task.taskId]} /> : null}
+              {(task.provider === 'claude' || task.provider === 'mock' || (task.provider === 'codex' && snapshot.capabilities.find(c => c.provider === 'codex')?.remoteControl)) && !task.host && !isMainAgent(task) ? <RemoteControlButton task={task} url={snapshot.remoteControl?.[task.taskId]} codex={snapshot.codexRemote?.[task.taskId]} /> : null}
               {/* The main agent: start a new chapter (a fresh session, handed over what is going on now). */}
               {isMainAgent(task) ? (
                 <button className="btn btn-icon" data-tip={t('New chapter')} aria-label={t('New chapter')} data-testid="new-chapter" onClick={() => run(() => call('main:newChapter', {}))}>
@@ -490,7 +490,9 @@ export function FocusView({ snapshot, task, transcript, now, onOpen, onVoiceSlot
             message={
               task.worktree
                 ? t('Stops the agent and removes it from the workspace. Its worktree is deleted if nothing in it is uncommitted, and then its conversation cannot be continued; otherwise the worktree is kept on disk.')
-                : t('Stops the agent and removes it from the workspace. Its conversation stays in {provider}: bring it back any time with Continue a session… (the history button next to + in the sidebar)', { provider: PROVIDER_LABEL[task.provider] ?? task.provider })
+                : snapshot.capabilities.find((c) => c.provider === task.provider)?.importHistory === false
+                  ? t('Stops the agent and removes it from the workspace. Its conversation stays in {provider}.', { provider: PROVIDER_LABEL[task.provider] ?? task.provider })
+                  : t('Stops the agent and removes it from the workspace. Its conversation stays in {provider}: bring it back any time with Continue a session… (the history button next to + in the sidebar)', { provider: PROVIDER_LABEL[task.provider] ?? task.provider })
             }
             confirmLabel={t('Remove')}
             danger

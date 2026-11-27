@@ -28,3 +28,9 @@ it('adds tracked tokens across machines, includes the main agent once and never 
  expect(rows.find(r=>r.provider==='codex')?.tokens).toBe(160);
  expect(rows.find(r=>r.provider==='claude')?.hasTokens).toBe(false);
 });
+it('adds an upstream ACP provider only once it has usage, without dropping its quota', () => {
+ const limits={opencode:{provider:'opencode',at:'2026-11-27',windows:[{key:'primary',mins:300,usedPercent:24}]}} as Record<string,ProviderLimits>;
+ const rows=providerUsage({tasks:[],limits} as any);
+ expect(rows.map(row=>row.provider)).toEqual(['codex','claude','antigravity','opencode']);
+ expect(rows.at(-1)?.limits?.windows[0].usedPercent).toBe(24);
+});

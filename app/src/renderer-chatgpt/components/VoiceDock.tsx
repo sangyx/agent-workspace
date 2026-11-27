@@ -1,3 +1,5 @@
+import { CODING_PROVIDERS } from '../../shared/types';
+import { isAcpProvider } from '../../shared/acp-agents';
 import { LiveVoiceControls } from '../../renderer/components/LiveVoiceControls';
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
@@ -12,6 +14,7 @@ import { holdMs, joinSpeech, stopIntent } from '../voice/compose';
 import { ContinuousListener, isLikelyNoise } from '../voice/listener';
 import { defaultShortcut, matches, PressGesture, recording, released, shortcutLabel, type PressAction } from '../voice/shortcut';
 import { AgentName, Alias, displayName, Icon, Kbd, labelOf, PROVIDER_LABEL, systemText } from './bits';
+import { providerTooltip } from '../../renderer/components/ProviderPicker';
 import { t as tr } from '../i18n';
 
 type MicState = 'off' | 'starting' | 'listening' | 'speaking' | 'denied' | 'unavailable';
@@ -1079,7 +1082,7 @@ function RoutePreview({
           </div>
           <div className="route-actions">
             <select className="input select" value={newProvider} onChange={(e) => setNewProvider(e.target.value as AgentProvider)}>
-              {(snapshot.demo ? ([...NATIVE_PROVIDERS, 'mock'] as const) : NATIVE_PROVIDERS).map((p) => (
+              {[...CODING_PROVIDERS.filter(p => !isAcpProvider(p) || snapshot.capabilities.find(c => c.provider === p)?.available), ...(snapshot.demo ? (['mock'] as const) : [])].map((p) => (
                 <option key={p} value={p} disabled={!snapshot.capabilities.find((c) => c.provider === p)?.available}>
                   {PROVIDER_LABEL[p]}
                 </option>
