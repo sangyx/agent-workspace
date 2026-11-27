@@ -67,6 +67,7 @@ export const ipcSchemas = {
   'skills:import': z.object({ key: z.string().min(1).max(4096) }),
   'skills:setEnabled': z.object({ name: z.string().min(1).max(64), enabled: z.boolean() }),
   'skills:remove': z.object({ name: z.string().min(1).max(64) }),
+  'task:rewind': z.object({ taskId: id, messageId: id }),
   'task:forkPoints': z.object({ taskId: id }),
   'task:fork': z.object({ taskId: id, upToMessageId: id.optional(), isolate: z.boolean(), instruction: text.optional() }),
   'task:retry': z.object({ taskId: id }),

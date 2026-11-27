@@ -54,7 +54,7 @@ function CodeBlock({ children, ...props }: ComponentPropsWithoutRef<'pre'>) {
   const code = (children as { props?: { className?: string } } | undefined)?.props;
   const lang = /language-([\w+#.-]+)/.exec(code?.className ?? '')?.[1];
   const copy = () => {
-    void navigator.clipboard.writeText(ref.current?.innerText ?? '').then(() => {
+    void navigator.clipboard.writeText(ref.current?.textContent ?? '').then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1200);
     });

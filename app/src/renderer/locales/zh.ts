@@ -1,6 +1,10 @@
 // Simplified Chinese UI strings, keyed by the English text used at the call site.
 // Provider names (Claude Code, Codex), agent names and agent output stay as-is.
 export const zh: Record<string, string> = {
+  'Rewind to this message': '回到这条消息',
+  'Rewind': '回退',
+  'Rewinding…': '正在回退…',
+  'Open a new chat with the earlier conversation and this message ready to edit. The original chat is kept. Later messages are excluded; files stay as they are.': '新建一段对话，保留此前的上下文，并将这条消息放回输入框供你修改。原对话会保留，不包含之后的消息；文件保持当前状态。',
   'Usage & limits': '用量与额度',
   'Close usage': '关闭用量',
   '{n} tokens tracked': '已记录 {n} tokens',

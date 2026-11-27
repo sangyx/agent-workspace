@@ -378,6 +378,7 @@ export function createElectronWorkspaceHost(
     "skills:setEnabled": (i: { name: string; enabled: boolean }) =>
       workspace.setSkillEnabled(i.name, i.enabled),
     "skills:remove": (i: { name: string }) => workspace.removeSkill(i.name),
+    "task:rewind": (i: { taskId: string; messageId: string }) => workspace.rewindTask(i.taskId, i.messageId),
     "task:forkPoints": (i: { taskId: string }) =>
       workspace.forkPoints(i.taskId),
     "task:fork": (i: {

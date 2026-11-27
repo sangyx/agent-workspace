@@ -1272,7 +1272,9 @@ body.resizing .sidebar-resizer {
   line-height: 1.5;
   background: transparent;
   border: 0;
-  white-space: pre;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: normal;
 }
 .md-code pre code {
   font-family: inherit;
@@ -8326,3 +8328,8 @@ button.subtask-row:hover {
 .provider-usage-note{margin:2px 0 0;line-height:1.5}
 .host-usage{position:fixed;z-index:1000;left:24px;bottom:24px;width:min(440px,calc(100vw - 48px));max-height:calc(100vh - 48px);overflow-y:auto;padding:18px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 40px #0002}
 .host-usage>header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+
+/* Code wraps visually; copying preserves its original line breaks. */
+.md-code, .md-code pre { min-width: 0; max-width: 100%; }
+.md-code pre code { white-space: inherit; overflow-wrap: inherit; }
+.message-rewind { display: inline-flex; align-items: center; gap: 4px; }

@@ -72,6 +72,7 @@ export interface Outputs {
   'skills:import': void;
   'skills:setEnabled': void;
   'skills:remove': void;
+  'task:rewind': { task: Task; message: TranscriptItem };
   'task:forkPoints': ForkPoint[];
   'task:fork': Task;
   'task:retry': void;

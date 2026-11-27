@@ -1,0 +1,81 @@
+import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { afterEach, expect, it, vi } from 'vitest';
+import { Workspace } from '../../src/main/workspace';
+import type { ProviderAdapter, ProviderSession, StartArgs } from '../../src/main/providers/types';
+import type { AgentProvider, TranscriptItem } from '../../src/shared/types';
+import { keepRewindHistory, rewindInstructions, rewindMessage } from '../../src/shared/rewind';
+const workspaces: Workspace[] = [], dirs: string[] = [];
+async function setup(provider: AgentProvider = 'codex') {
+  const dir = mkdtempSync(join(tmpdir(), 'amw-rewind-')); dirs.push(dir);
+  const cwd = join(dir, 'project'); mkdirSync(cwd);
+  const session: ProviderSession = { provider, nativeSessionId: () => 'new-native', start: vi.fn(async () => {}), close: vi.fn(async () => {}), send: vi.fn(async () => 'turn' as const), respond: vi.fn(async () => {}), interrupt: vi.fn(async () => {}) };
+  const createSession = vi.fn((_args: StartArgs) => session);
+  const readHistory = vi.fn<NonNullable<ProviderAdapter['readHistory']>>().mockResolvedValue([]);
+  const adapter = { provider, createSession, readHistory } as unknown as ProviderAdapter;
+  const ws = new Workspace({ dataDir: join(dir, 'data'), adapters: { [provider]: adapter }, backgroundModel: async () => '' }); workspaces.push(ws);
+  const project = await ws.addProject(cwd, 'Research'); project.kind = 'research';
+  const task = await ws.createTask({ projectId: project.projectId, provider, title: 'Original', isolate: false }); task.provider = provider;
+  const row = (id: string, role: TranscriptItem['role'], text: string): TranscriptItem => ({ id, taskId: task.taskId, role, text, createdAt: '2026-11-27T12:00:00Z' });
+  const items = [row('u1', 'user', 'Same question'), row('a1', 'assistant', 'Earlier answer'), row('u2', 'user', 'Same question'), row('a2', 'assistant', 'FUTURE ANSWER'), row('u3', 'user', 'FUTURE REQUEST')];
+  ws.store.setTranscript(task.taskId, items);
+  return { ws, task, project, items, cwd, session, createSession, readHistory, dataDir: join(dir, 'data') };
+}
+afterEach(async () => { for (const ws of workspaces.splice(0)) await ws.shutdown(); for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
+for (const provider of ['codex', 'claude', 'antigravity'] as const) it(`rewinds ${provider} on SSH by exact message ID without opening a writer or changing the source`, async () => {
+  const { ws, task, project, items, createSession } = await setup(provider);
+  task.host = 'UT'; task.cwd += '/paper'; task.model = 'chosen-model'; task.reasoningEffort = 'high'; task.permissionMode = 'ask';
+  const source = structuredClone(task), before = structuredClone(items);
+  const { task: branch, message } = ws.rewindTask(task.taskId, 'u2');
+  expect(branch).toMatchObject({ projectId: project.projectId, provider, host: 'UT', cwd: task.cwd, model: 'chosen-model', reasoningEffort: 'high', permissionMode: 'ask', status: 'idle', forkedFrom: { taskId: task.taskId, alias: task.alias } });
+  expect(branch.sessionLocalId).toBeUndefined(); expect(message.text).toBe('Same question');
+  expect(ws.transcript(branch.taskId).map(i => i.text)).toEqual(['Same question', 'Earlier answer']);
+  expect(ws.transcript(branch.taskId).every(i => i.inherited && i.taskId === branch.taskId && !before.some(old => old.id === i.id))).toBe(true);
+  expect(task).toMatchObject({ ...source, sharedCwdWarning: task.sharedCwdWarning }); expect(items).toEqual(before); expect(createSession).not.toHaveBeenCalled();
+});
+it('a fresh writer receives earlier context only, keeps it after history refresh and restart, and can rewind again', async () => {
+  const { ws, task, createSession, session, readHistory, dataDir } = await setup();
+  const { task: branch } = ws.rewindTask(task.taskId, 'u2');
+  expect((await ws.send(branch.taskId, 'Revised question', 'text')).ok).toBe(true);
+  expect(createSession.mock.calls[0][0].resumeNativeSessionId).toBeUndefined();
+  const instructions = createSession.mock.calls[0][0].developerInstructions!;
+  expect(instructions).toContain('Earlier answer'); expect(instructions).not.toMatch(/FUTURE|Revised question/);
+  expect(session.send).toHaveBeenCalledWith('Revised question', { interrupt: undefined });
+  ws.handleEvent(branch.taskId, branch.sessionLocalId!, { type: 'sessionStarted', nativeSessionId: 'new-native', resumed: false });
+  ws.handleEvent(branch.taskId, branch.sessionLocalId!, { type: 'turnCompleted', status: 'completed' });
+  await ws.stop(branch.taskId);
+  readHistory.mockResolvedValue([{ type: 'transcriptItem', itemId: 'new-u', role: 'user', text: 'Revised question', history: true }, { type: 'transcriptItem', itemId: 'new-a', role: 'assistant', text: 'New answer', history: true }]);
+  await ws.refreshHistory(branch.taskId, true);
+  expect(ws.transcript(branch.taskId).filter(i => i.role !== 'system').map(i => i.text)).toEqual(['Same question', 'Earlier answer', 'Revised question', 'New answer']);
+  await ws.shutdown();
+  const reopened = new Workspace({ dataDir, adapters: {}, backgroundModel: async () => '' }); workspaces.push(reopened);
+  const again = reopened.rewindTask(branch.taskId, 'new-u');
+  expect(reopened.transcript(again.task.taskId).filter(i => i.role !== 'system').map(i => i.text)).toEqual(['Same question', 'Earlier answer']);
+  expect(rewindInstructions(reopened.transcript(again.task.taskId))).not.toContain('New answer');
+});
+it('supports the first message, restores selected attachments, and rejects invalid or busy cuts without adding tasks', async () => {
+  const { ws, task, items } = await setup();
+  items[0].images = [{ id: 'image', name: 'figure.png', mediaType: 'image/png' } as any];
+  const first = ws.rewindTask(task.taskId, 'u1'); expect(ws.transcript(first.task.taskId)).toEqual([]); expect(first.message.images).toEqual(items[0].images);
+  const count = ws.store.data.tasks.length;
+  expect(() => ws.rewindTask(task.taskId, 'missing')).toThrow('Choose a message');
+  expect(() => ws.rewindTask(task.taskId, 'a1')).toThrow('Choose a message');
+  task.status = 'running'; expect(() => ws.rewindTask(task.taskId, 'u2')).toThrow('stop it');
+  expect(ws.store.data.tasks).toHaveLength(count);
+});
+it('does not put raw question-reply transport JSON into the draft or inherited context', () => {
+  const item = { id: 'reply', taskId: 't', role: 'user', inherited: true, text: '<send_user_message_question_reply>\n[{"question":"Continue?","answer":"Keep the controller running"}]\n</send_user_message_question_reply>', createdAt: '' } as TranscriptItem;
+  expect(rewindMessage(item).text).toBe('Keep the controller running');
+  expect(rewindInstructions([item])).not.toContain('send_user_message_question_reply');
+  expect(keepRewindHistory([item], [])).toEqual([item]);
+});
+it('keeps a source worktree while a rewound conversation still uses it', async () => {
+  const { ws, task, cwd } = await setup();
+  task.worktree = { path: cwd, branch: 'test', baseRef: 'HEAD', parentRepo: cwd };
+  const { task: branch } = ws.rewindTask(task.taskId, 'u2');
+  const remove = vi.spyOn((ws as any).worktrees, 'removeIfClean');
+  expect(branch.worktree).toBeUndefined();
+  expect(await ws.remove(task.taskId)).toContain('another conversation uses it');
+  expect(remove).not.toHaveBeenCalled(); expect(ws.store.data.tasks).toContain(branch);
+});

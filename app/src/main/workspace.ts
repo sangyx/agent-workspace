@@ -1,5 +1,6 @@
 import { recognitionSchema, vocabularyWords } from '../shared/voice-settings';
 import {presentTranscriptItem} from '../shared/presentation';
+import { keepRewindHistory, rewindInstructions, rewindMessage } from '../shared/rewind';
 import {sessionKey} from '../shared/session-identity';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
@@ -836,8 +837,8 @@ export class Workspace {
     if (!items.size) return [];
     const native = [...items.values()];
     // Keep app-only notes and local approval decisions; native messages remain authoritative.
-    const notes = saved.filter((item) => item.role === 'system' && !items.has(item.id));
-    const next = [...notes, ...native];
+    const notes = saved.filter((item) => item.role === 'system' && !item.inherited && !items.has(item.id));
+    const next = [...notes, ...keepRewindHistory(saved, native)];
     if (!isDeepStrictEqual(saved, next)) {
       this.store.setTranscript(task.taskId, next);
       const sourceTime = events.reduce((latest, event) => event.type === 'transcriptItem' && event.historyUpdatedAt ? Math.max(latest, Date.parse(event.historyUpdatedAt) || 0) : latest, 0);
@@ -1172,7 +1173,9 @@ export class Workspace {
     const t = this.task(taskId);
     await this.stop(taskId);
     let note = 'Task removed.';
-    if (t.worktree && !options.keepFiles) {
+    const sharedWorktree = t.worktree && this.store.data.tasks.some(other => other !== t && other.host === t.host && (other.cwd === t.worktree!.path || other.cwd.startsWith(t.worktree!.path + sep)));
+    if (sharedWorktree) note = 'Task removed; its worktree was kept because another conversation uses it.';
+    if (t.worktree && !options.keepFiles && !sharedWorktree) {
       const r = await this.worktrees.removeIfClean(t.worktree);
       note = r.removed ? 'Task removed; its clean worktree was deleted.' : `Task removed; worktree kept at ${t.worktree.path} because ${r.reason}.`;
     }
@@ -1270,6 +1273,7 @@ export class Workspace {
     this.changed();
 
     const isMain = task === this.store.data.mainAgent;
+    const instructions = [instructionsFor(task, injected), rewindInstructions(this.store.transcript(taskId))].filter(Boolean).join('\n\n');
     const skills = isMain ? undefined : await this.skillsFor(task);
     const history: TranscriptItem[] = [];
     let replaying = true;
@@ -1281,7 +1285,7 @@ export class Workspace {
         resumeNativeSessionId: resumeId,
         loadHistory: !!resumeId,
         // The main agent gets its role and the workspace tools; it never edits code itself.
-        developerInstructions: isMain ? [MAIN_AGENT_PROMPT, instructionsFor(task, injected)].filter(Boolean).join('\n\n') : instructionsFor(task, injected),
+        developerInstructions: isMain ? [MAIN_AGENT_PROMPT, instructions].filter(Boolean).join('\n\n') : instructions,
         mockScript: task.mockScript,
         model: task.model,
         reasoningEffort: task.reasoningEffort,
@@ -1338,7 +1342,7 @@ export class Workspace {
     const note = history.length ? `Resumed native ${task.provider} session ${record.nativeSessionId} (${history.length} items restored).` : resumeId ? `Resumed native ${task.provider} session ${resumeId}.` : undefined;
     // The native session is authoritative for history; replace the display cache with it.
     if (history.length) {
-      this.store.setTranscript(taskId, [...history, ...(note && !before ? [{ id: `sys-${randomUUID()}`, taskId, role: 'system' as const, text: note, createdAt: now() }] : [])]);
+      this.store.setTranscript(taskId, [...keepRewindHistory(this.store.transcript(taskId), history), ...(note && !before ? [{ id: `sys-${randomUUID()}`, taskId, role: 'system' as const, text: note, createdAt: now() }] : [])]);
       for (const cb of this.transcriptListeners) cb(taskId, null);
     } else if (note && !before) {
       this.appendSystem(taskId, note);
@@ -1707,6 +1711,34 @@ export class Workspace {
   async forkPoints(taskId: string): Promise<ForkPoint[]> {
     const { task, adapter, nativeSessionId } = this.forkSource(taskId);
     return adapter.forkPoints(nativeSessionId, task.cwd);
+  }
+
+  /** Rewind by branching before an exact display message ID, on any provider or host.
+   * A fresh native session avoids both future-context leakage and shared-writer conflicts. */
+  rewindTask(taskId: string, messageId: string): { task: Task; message: TranscriptItem } {
+    const source = this.task(taskId);
+    if (source === this.store.data.mainAgent) throw new Error('Open a project chat to rewind a message.');
+    if (this.connecting.has(taskId) || this.live.get(taskId)?.turnActive || ['running', 'starting'].includes(source.status))
+      throw new Error('Wait for the current turn to finish or stop it before rewinding.');
+    const saved = this.store.transcript(taskId);
+    const index = saved.findIndex(item => item.id === messageId);
+    const selected = saved[index];
+    if (!selected || selected.role !== 'user' || selected.via === 'main') throw new Error('Choose a message you sent to rewind.');
+    const task = this.addTask(this.newTaskIds(), {
+      projectId: source.projectId, provider: source.provider, host: source.host,
+      cwd: source.cwd, keepsOriginalFolder: true,
+      name: `${source.name} (rewind)`, nameSource: 'user', title: source.title,
+      status: 'idle', summary: 'Rewound conversation. Edit the message below to continue.',
+      permissionMode: source.permissionMode, model: source.model, mockScript: source.mockScript,
+      forkedFrom: { taskId: source.taskId, alias: source.alias },
+    });
+    task.reasoningEffort = source.reasoningEffort;
+    this.store.setTranscript(task.taskId, saved.slice(0, index).map(item => ({
+      ...structuredClone(item), id: `rewind-${randomUUID()}`, taskId: task.taskId,
+      inherited: true, streaming: undefined,
+    })));
+    this.changed();
+    return { task, message: rewindMessage(selected) };
   }
 
   /**

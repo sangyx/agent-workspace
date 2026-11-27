@@ -38,7 +38,8 @@ import { OpenInApp } from './OpenInApp';
 import { AttachButton, AttachmentStrip, MessageImages, useAttachments } from './Attachments';
 import { dropMentions, MentionHighlight, MentionMenu, useMentions } from './Mentions';
 import { savedPreview, savePreview, type PreviewState } from '../preview-store';
-import { useDraft } from '../drafts';
+import { useDraft, setDraftText, setDraftImages } from '../drafts';
+import { RewindButton, RewindDialog } from '../../renderer/components/Rewind';
 
 export function FocusView({ snapshot, task, transcript, now, onOpen }: { snapshot: WorkspaceSnapshot; task: Task; transcript: TranscriptItem[]; now: number; onOpen?: (taskId: string) => void }) {
   const directoryWarning = warningText(task.sharedCwdWarning || '');
@@ -533,7 +534,7 @@ export function FocusView({ snapshot, task, transcript, now, onOpen }: { snapsho
               )
             ) : null}
             <PreviewContext.Provider value={{ preview: setPreview, openExternal }}>
-              <Transcript items={transcript} main={isMainAgent(task)} task={task} snapshot={snapshot} />
+              <Transcript items={transcript} main={isMainAgent(task)} task={task} snapshot={snapshot} onOpen={onOpen} />
             </PreviewContext.Provider>
             {/* Requests wait at the end of the conversation, where the agent asked, above the reply box. */}
             {items.length || task.retry ? (
@@ -881,10 +882,14 @@ function TaskName({ task, tasks }: { task: Task; tasks: Task[] }) {
 
 // Memoized: resizing the window (or the side column) re-renders the view on every frame; the
 // conversation itself only when what it shows changes.
-const Transcript = memo(function Transcript({ items, main, task, snapshot }: { items: TranscriptItem[]; main?: boolean; task: Task; snapshot: WorkspaceSnapshot }) {
+const Transcript = memo(function Transcript({ items, main, task, snapshot, onOpen }: { items: TranscriptItem[]; main?: boolean; task: Task; snapshot: WorkspaceSnapshot; onOpen?: (taskId: string) => void }) {
   const ref = useRef<HTMLDivElement>(null);
   // "Keep as memory" on one of the user's messages: the dialog, and the right-click menu that opens it.
   const [remember, setRemember] = useState<string | null>(null);
+  const [rewind, setRewind] = useState<string | null>(null);
+  const canRewind = !main && !!onOpen;
+  const rewindBusy = ['running', 'starting'].includes(task.status);
+  useEffect(() => setRewind(null), [task.taskId]);
   // Right-click on a message: Copy, and on what the user said themselves, Keep as memory.
   const menu = useContextMenu();
   const stick = useRef(true);
@@ -975,6 +980,7 @@ const Transcript = memo(function Transcript({ items, main, task, snapshot }: { i
                         menuAt(
                           e,
                           [
+                            item.role === 'user' && item.via !== 'main' && canRewind && { id: 'rewind', label: t('Rewind to this message'), icon: 'history' as const, disabled: rewindBusy, onSelect: () => setRewind(item.id) },
                             item.role === 'user' && item.via !== 'main' && { id: 'remember', label: t('Keep as memory…'), icon: 'remember' as const, onSelect: () => setRemember(item.id) },
                             !!text.trim() && { id: 'copy', label: picked ? t('Copy selection') : t('Copy'), icon: 'copy' as const, onSelect: () => void navigator.clipboard.writeText(text).catch(() => {}) },
                           ],
@@ -991,6 +997,7 @@ const Transcript = memo(function Transcript({ items, main, task, snapshot }: { i
                   {item.delivery === 'steer' ? <span className="delivery-tag">{t('added mid-turn')}</span> : null}
                   {item.delivery === 'interrupt' ? <span className="delivery-tag interrupt">{t('stopped the turn')}</span> : null}
                   {/* What the user said themselves can become memory (not what the main agent relayed). */}
+                  {item.via !== 'main' && canRewind ? <RewindButton disabled={rewindBusy} onClick={() => setRewind(item.id)} /> : null}
                   {item.via !== 'main' ? <RememberButton onClick={() => setRemember(item.id)} /> : null}
                 </div> : null}
               {item.role === 'user' && item.contextNotes?.length ? <ContextNotes notes={item.contextNotes}/> : null}
@@ -1052,6 +1059,10 @@ const Transcript = memo(function Transcript({ items, main, task, snapshot }: { i
         })}
       </div>
       {menu.element}
+      {rewind ? <RewindDialog task={task} messageId={rewind} onClose={() => setRewind(null)} onRewound={(taskId, text, images) => {
+        setDraftImages(taskId, images); setDraftText(taskId, text); onOpen?.(taskId);
+        requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('[data-testid="composer-input"]')?.focus());
+      }} /> : null}
       {remember ? <RememberDialog task={task} itemId={remember} snapshot={snapshot} onClose={() => setRemember(null)} /> : null}
     </div>
     </>

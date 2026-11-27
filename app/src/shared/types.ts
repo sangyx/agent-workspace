@@ -274,6 +274,8 @@ export interface ImageRef {
 }
 
 export interface TranscriptItem {
+  /** Conversation copied before a rewind point; retained alongside fresh native history. */
+  inherited?: boolean;
   /** Presentation only: source transport payload and readable replies; never written over provider text. */
   originalText?: string;
   questionReplies?: Array<{ question: string; answer: string }>;
