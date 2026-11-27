@@ -101,7 +101,7 @@ export function rank(tasks: Task[], open: AttentionItem[]): Task[] {
 
 /** Agents waiting on the user, across every team: the sidebar's "Needs you" strip. */
 export function needsYou(tasks: Task[], open: AttentionItem[]): Task[] {
-  return rank(tasks, open).filter((t) => tierOf(t, open) === 0 && !isSetAside(t));
+  return rank(tasks, open).filter((t) => !t.archivedAt && tierOf(t, open) === 0 && !isSetAside(t));
 }
 
 export interface Team {
@@ -130,7 +130,7 @@ export function teams(tasks: Task[], projects: Array<Pick<Project, 'projectId' |
   const out: Array<Team & { lead: { g: Group; at: number } }> = [];
   for (const project of projects) {
     const all = rank(
-      tasks.filter((t) => t.projectId === project.projectId),
+      tasks.filter((t) => !t.archivedAt && t.projectId === project.projectId),
       open,
     );
     if (!all.length) continue;
@@ -161,7 +161,7 @@ export function visibleOrder(list: Team[], expanded: (team: Team) => boolean): T
 
 /** Agents the Overview may show: waiting, working, unread or failed, or active within RECENT_MS; most urgent first. */
 export function overviewCandidates(tasks: Task[], open: AttentionItem[], now: number): Task[] {
-  return rank(tasks, open).filter((t) => !isSetAside(t, open) && (tierOf(t, open) <= 2 || now - activeAt(t) < RECENT_MS));
+  return rank(tasks, open).filter((t) => !t.archivedAt && !isSetAside(t, open) && (tierOf(t, open) <= 2 || now - activeAt(t) < RECENT_MS));
 }
 
 /**

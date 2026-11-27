@@ -1,6 +1,16 @@
 // Simplified Chinese UI strings, keyed by the English text used at the call site.
 // Provider names (Claude Code, Codex), agent names and agent output stay as-is.
 export const zh: Record<string, string> = {
+  'Other chats': '其他会话',
+  'Archive conversation': '归档会话',
+  'Unarchive conversation': '取消归档会话',
+  'Archived conversations': '已归档会话',
+  'Delete conversation…': '删除会话…',
+  'Delete conversation': '删除会话',
+  'Delete {name}?': '删除“{name}”？',
+  'Conversation could not be updated': '无法更新会话',
+  'Stops this agent and removes its conversation from this workspace. Project files, worktrees and the original CLI history are kept. You can import the original session again with Continue a session.': '停止此 agent 并从当前工作区删除会话。项目文件、工作树和 CLI 中的原始历史会保留。你可以通过“接入已有会话”重新导入原始会话。',
+
   'In reply to': '回复的问题',
   'Original message': '原始消息',
   'No answer provided': '未提供回答',

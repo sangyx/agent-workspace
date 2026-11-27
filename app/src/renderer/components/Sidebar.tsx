@@ -1,3 +1,5 @@
+import { ArchivedConversations } from './ArchivedConversations';
+import { useConversationActions } from './ConversationActions';
 import { ProjectConversationActions } from '../../renderer/components/ProjectConversationActions';
 import { useState, type MouseEvent } from 'react';
 import { needsYou, recentConversations, visibleOrder, type Team } from '../../shared/agent-order';
@@ -64,6 +66,7 @@ export function Sidebar({
   const [showIdle, setShowIdle] = useState<Record<string, boolean>>({});
   // Right-click: one menu at a time; a rename edits the name where it stands.
   const menu = useContextMenu();
+  const conversations = useConversationActions();
   const [editing, setEditing] = useState<{ taskId: string; field: AgentField; needs: boolean } | { projectId: string } | null>(null);
   const editingField = (t: Task, needs: boolean) => (editing && 'taskId' in editing && editing.taskId === t.taskId && editing.needs === needs ? editing.field : null);
   const editingProject = (id: string) => !!editing && 'projectId' in editing && editing.projectId === id;
@@ -178,7 +181,7 @@ export function Sidebar({
     const subs = opts.needs ? undefined : liveSubtasks(t);
     const unfolded = !!subs?.length && subOpen.has(t.taskId);
     const field = editingField(t, !!opts.needs);
-    const items = () => agentMenuItems(t, { onRename: (f) => setEditing({ taskId: t.taskId, field: f, needs: !!opts.needs }), setAside: true, onOpen: () => onSelect(t.taskId) });
+    const items = () => agentMenuItems(t, { onRename: (f) => setEditing({ taskId: t.taskId, field: f, needs: !!opts.needs }), setAside: true, onArchive: conversations.archive, onDelete: conversations.remove, onOpen: () => onSelect(t.taskId) });
     const cls = `agent-row status-${t.status}${t.taskId === focusId ? ' active' : ''}${pending.length ? ' needs' : ''}${opts.needs ? ' compact' : ''}`;
     const inner = (
       <>
@@ -295,6 +298,7 @@ export function Sidebar({
       <nav className="agent-list" aria-label={tr('Projects')} onScroll={showScrollbarAWhile} data-testid="agent-list">
         {snapshot.tasks.length === 0 ? <div className="muted small pad-x">{tr('No agents yet.')}</div> : null}
         {live.map(renderTeam)}
+        <ArchivedConversations tasks={snapshot.tasks} projects={snapshot.projects} renderRow={row} />
         {archived.length ? (
           <div className="team-archive" data-testid="team-archive">
             <button className="team-head team-archive-head" onClick={() => setArchiveOpen(!archiveShown)} aria-expanded={archiveShown} data-testid="team-archive-head" title={tr('Nothing going on for 3 days; a project comes back when one of its agents is used.')}>
@@ -333,6 +337,7 @@ export function Sidebar({
         </div>
       </div>
       {menu.element}
+      {conversations.element}
     </aside>
   );
 }

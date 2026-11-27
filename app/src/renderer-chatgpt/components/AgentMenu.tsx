@@ -22,7 +22,7 @@ export const saveTitle = (taskId: string, name: string) => call('task:rename', {
 /** The same items wherever an agent is right-clicked (sidebar row, Overview tile, its header). */
 export function agentMenuItems(
   task: Task,
-  opts: { onRename: (field: AgentField) => void; onOpen?: () => void; setAside?: boolean },
+  opts: { onRename: (field: AgentField) => void; onOpen?: () => void; setAside?: boolean; onArchive?: (task: Task) => void; onDelete?: (task: Task) => void },
 ): Array<MenuItem | '-'> {
   if (isMainAgent(task)) return opts.onOpen ? [{ id: 'open', label: t('Open'), icon: 'expand', onSelect: opts.onOpen }] : [];
   const items: Array<MenuItem | '-'> = [
@@ -38,6 +38,9 @@ export function agentMenuItems(
       onSelect: () => void call('task:setAside', { taskId: task.taskId, on: !task.setAside }).catch(() => {}),
     });
   if (opts.onOpen) items.push({ id: 'open', label: t('Open'), icon: 'expand', onSelect: opts.onOpen });
+  if (opts.onArchive || opts.onDelete) items.push('-');
+  if (opts.onArchive) items.push({ id: 'archive-conversation', label: task.archivedAt ? t('Unarchive conversation') : t('Archive conversation'), icon: 'archive', onSelect: () => opts.onArchive!(task) });
+  if (opts.onDelete) items.push({ id: 'delete-conversation', label: t('Delete conversation…'), icon: 'trash', onSelect: () => opts.onDelete!(task) });
   return items;
 }
 

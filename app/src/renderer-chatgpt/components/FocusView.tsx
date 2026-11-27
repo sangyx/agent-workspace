@@ -17,6 +17,7 @@ import { Markdown } from './Markdown';
 import { ModelPicker } from './ModelPicker';
 import { AgentMemoryPanel, MemoryChip, RememberButton, RememberDialog } from './SessionMemory';
 import { menuAt, menuKey, useContextMenu, type MenuItem } from './ContextMenu';
+import { useConversationActions } from '../../renderer/components/ConversationActions';
 import { agentMenuItems, EditableAgentName, type AgentField } from './AgentMenu';
 import { RetryNotice } from './Retry';
 import { UsageChips } from './SessionUsage';
@@ -832,10 +833,11 @@ function WaitingBarRow({ item, task, now, open, onToggle, onOpen }: { item: Atte
 
 /** The title keeps rename and additional controls available in its context menu. */
 function TaskName({ task, tasks, onFork, onControls }: { task: Task; tasks: Task[]; onFork?: () => void; onControls: () => void }) {
+  const conversations = useConversationActions();
   const [editing, setEditing] = useState<AgentField | null>(null);
   const menu = useContextMenu();
   const items = (): Array<MenuItem | '-'> => [
-    ...agentMenuItems(task, { onRename: setEditing }),
+    ...agentMenuItems(task, { onRename: setEditing, onArchive: conversations.archive, onDelete: conversations.remove }),
     ...(onFork ? [{ id: 'fork-chat', label: t('Fork chat…'), icon: 'branch' as const, onSelect: onFork, disabled: task.status === 'running' || task.status === 'starting' }] : []),
     { id: 'chat-controls', label: t('Chat controls…'), icon: 'gear', onSelect: onControls },
   ];
@@ -857,6 +859,7 @@ function TaskName({ task, tasks, onFork, onControls }: { task: Task; tasks: Task
         <EditableAgentName task={task} tasks={tasks} editing={editing} onDone={() => setEditing(null)} />
       </span>
       {menu.element}
+      {conversations.element}
     </>
   );
 }

@@ -84,6 +84,8 @@ export interface Outputs {
   'task:viewed': void;
   'task:setPermissionMode': void;
   'task:remove': string;
+  'task:deleteConversation': string;
+  'task:archive': void;
   'sessions:discover': NativeSessionInfo[];
   'sessions:discoverAll': NativeSessionInfo[];
   'session:map': MapGrouping | null;

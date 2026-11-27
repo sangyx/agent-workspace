@@ -17,6 +17,7 @@ import { Markdown } from './Markdown';
 import { ModelPicker } from './ModelPicker';
 import { AgentMemoryPanel, MemoryChip, RememberButton, RememberDialog } from './SessionMemory';
 import { menuAt, useContextMenu } from './ContextMenu';
+import { useConversationActions } from './ConversationActions';
 import { agentMenuItems, EditableAgentName, type AgentField } from './AgentMenu';
 import { RetryNotice } from './Retry';
 import { UsageChips } from './SessionUsage';
@@ -854,6 +855,7 @@ function WaitingBarRow({ item, task, now, open, onToggle, onOpen }: { item: Atte
 
 /** The agent's label and name in its header: double-click renames the label; right-click offers both. */
 function TaskName({ task, tasks }: { task: Task; tasks: Task[] }) {
+  const conversations = useConversationActions();
   const [editing, setEditing] = useState<AgentField | null>(null);
   const menu = useContextMenu();
   if (isMainAgent(task))
@@ -867,11 +869,12 @@ function TaskName({ task, tasks }: { task: Task; tasks: Task[] }) {
       className={`task-name${editing ? ' editing' : ''}`}
       data-testid="focus-title"
       onDoubleClick={() => editing || setEditing('name')}
-      onContextMenu={(e) => editing || menu.open(menuAt(e, agentMenuItems(task, { onRename: setEditing })))}
+      onContextMenu={(e) => editing || menu.open(menuAt(e, agentMenuItems(task, { onRename: setEditing, onArchive: conversations.archive, onDelete: conversations.remove })))}
       title={editing ? undefined : t('Double-click to rename')}
     >
       <EditableAgentName task={task} tasks={tasks} editing={editing} onDone={() => setEditing(null)} />
       {menu.element}
+      {conversations.element}
     </span>
   );
 }

@@ -77,6 +77,8 @@ export const ipcSchemas = {
   'task:viewed': z.object({ taskId: id }),
   'task:setPermissionMode': z.object({ taskId: id, mode: z.enum(['auto', 'edits', 'ask']) }),
   'task:remove': z.object({ taskId: id }),
+  'task:deleteConversation': z.object({ taskId: id }),
+  'task:archive': z.object({ taskId: id, on: z.boolean() }),
   'sessions:discover': z.object({ projectId: id, provider: nativeProvider }),
   'sessions:discoverAll': z.object({}),
   'session:map': z.object({ taskId: z.string() }),

@@ -58,6 +58,8 @@ export interface Task {
   lastUserActivityAt?: string;
   /** Set aside by the user: out of the Overview and folded into its team's idle row, dot hollow, until it works, asks, fails or is messaged again. Its session keeps running. */
   setAside?: boolean;
+  /** Explicitly archived by the user; remains archived until restored or messaged. */
+  archivedAt?: string;
   /** Finished a turn the user has not looked at since (a green dot); opening the agent clears it. */
   unread?: boolean;
   /** When the agent entered its current status group (waiting on you / working / anything else); orders the sidebar. */

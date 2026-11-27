@@ -1,3 +1,5 @@
+import { ArchivedConversations } from '../../renderer/components/ArchivedConversations';
+import { useConversationActions } from '../../renderer/components/ConversationActions';
 import { ProjectConversationActions } from '../../renderer/components/ProjectConversationActions';
 import { useState, type MouseEvent } from 'react';
 import { needsYou, recentConversations, type Team } from '../../shared/agent-order';
@@ -82,6 +84,7 @@ export function Sidebar({
   };
   // Right-click: one menu at a time; a rename edits the name where it stands.
   const menu = useContextMenu();
+  const conversations = useConversationActions();
   const [editing, setEditing] = useState<{ taskId: string; field: AgentField; needs: boolean } | { projectId: string } | null>(null);
   const editingField = (t: Task, needs: boolean) => (editing && 'taskId' in editing && editing.taskId === t.taskId && editing.needs === needs ? editing.field : null);
   const editingProject = (id: string) => !!editing && 'projectId' in editing && editing.projectId === id;
@@ -210,7 +213,7 @@ export function Sidebar({
     const subs = opts.needs ? undefined : liveSubtasks(t);
     const unfolded = !!subs?.length && subOpen.has(t.taskId);
     const field = editingField(t, !!opts.needs);
-    const items = () => agentMenuItems(t, { onRename: (f) => setEditing({ taskId: t.taskId, field: f, needs: !!opts.needs }), setAside: true, onOpen: () => onSelect(t.taskId) });
+    const items = () => agentMenuItems(t, { onRename: (f) => setEditing({ taskId: t.taskId, field: f, needs: !!opts.needs }), setAside: true, onArchive: conversations.archive, onDelete: conversations.remove, onOpen: () => onSelect(t.taskId) });
     const cls = `agent-row status-${t.status}${t.taskId === focusId ? ' active' : ''}${pending.length ? ' needs' : ''}${opts.needs ? ' compact' : ''}`;
     const inner = (
       <>
@@ -342,6 +345,7 @@ export function Sidebar({
           return teams.length ? <div key={kind} data-project-kind={kind}>{hasResearch?<div className="sidebar-section"><span>{tr(kind==='research'?'Research projects':'Other projects')}</span></div>:null}{teams.map(renderTeam)}</div>:null;
         })}
         {live.length > 6 ? <button className="team-idle" aria-expanded={showProjects} onClick={() => setShowProjects(!showProjects)}>{tr(showProjects ? 'Show less' : 'Show more')}</button> : null}
+        <ArchivedConversations tasks={snapshot.tasks} projects={snapshot.projects} renderRow={row} />
         {archived.length ? (
           <div className="team-archive" data-testid="team-archive">
             <button className="team-head team-archive-head" onClick={() => setArchiveOpen(!archiveShown)} aria-expanded={archiveShown} data-testid="team-archive-head" title={tr('Nothing going on for 3 days; a project comes back when one of its agents is used.')}>
@@ -366,6 +370,7 @@ export function Sidebar({
         ) : null}
       </div>
       {menu.element}
+      {conversations.element}
       </div>
     </aside>
   );

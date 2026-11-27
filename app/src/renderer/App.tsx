@@ -206,7 +206,7 @@ export function App() {
   const candidates = snapshot ? overviewCandidates(snapshot.tasks, openAll, now) : [];
   const exists = new Set(snapshot?.tasks.map((t) => t.taskId) ?? []);
   // (Held still under the pointer, an agent still leaves at once when it is removed or set aside.)
-  const asideIds = new Set(snapshot?.tasks.filter((t) => t.setAside).map((t) => t.taskId) ?? []);
+  const asideIds = new Set(snapshot?.tasks.filter((t) => t.setAside || t.archivedAt).map((t) => t.taskId) ?? []);
   const shownIds = hovering ? slotsRef.current.filter((id) => exists.has(id) && !asideIds.has(id)) : fillSlots(slotsRef.current, candidates, openAll, slotsFor(layout, candidates.length), selectedId);
   slotsRef.current = shownIds;
   const shown = shownIds.map((id) => snapshot!.tasks.find((t) => t.taskId === id)!).filter(Boolean);
@@ -312,7 +312,7 @@ export function App() {
   const onboarding = !snapshot.demo && !ob.dismissed && (!!ob.started || snapshot.tasks.length === 0);
   setLanguage(snapshot.settings.language ?? 'en');
   const openItems = snapshot.attention.filter((a) => a.state === 'open');
-  const needYou = new Set(openItems.filter((a) => a.kind !== 'completion' && !snapshot.tasks.find((t) => t.taskId === a.taskId)?.setAside).map((a) => a.taskId)).size;
+  const needYou = new Set(openItems.filter((a) => a.kind !== 'completion' && !snapshot.tasks.find((t) => t.taskId === a.taskId)?.setAside && !snapshot.tasks.find((t) => t.taskId === a.taskId)?.archivedAt).map((a) => a.taskId)).size;
   const working = snapshot.tasks.filter((t) => t.status === 'running' || t.status === 'starting').length;
   // A layout keeps its number of tiles; when the Overview is too narrow for its columns, the same
   // tiles go into fewer columns (3×2 becomes 2×3) rather than squeezing below a readable width.

@@ -1089,6 +1089,26 @@ export class Workspace {
     this.changed();
   }
 
+  /** Manual archive is independent of idle projects and Set aside; provider output never restores it. */
+  archiveConversation(taskId: string, on: boolean): void {
+    const task = this.task(taskId);
+    if (task === this.store.data.mainAgent) throw new Error('The main agent cannot be archived.');
+    if (on) task.archivedAt ??= now();
+    else {
+      task.archivedAt = undefined;
+      task.setAside = undefined;
+      task.lastUserActivityAt = now(); // Restored conversations are visible even after a long idle period.
+    }
+    this.changed();
+  }
+
+  /** Delete the app's conversation entry, preserving project files and the provider's original history. */
+  async deleteConversation(taskId: string): Promise<string> {
+    if (this.connecting.has(taskId)) throw new Error('Still connecting; try again in a moment.');
+    if (this.task(taskId) === this.store.data.mainAgent) throw new Error('The main agent cannot be deleted.');
+    return this.remove(taskId, { keepFiles: true });
+  }
+
   markViewed(taskId: string): void {
     const t = this.findTask(taskId);
     if (t?.labelStale) this.relabelFromHistory(t);
@@ -1142,11 +1162,11 @@ export class Workspace {
     return p;
   }
 
-  async remove(taskId: string): Promise<string> {
+  async remove(taskId: string, options: { keepFiles?: boolean } = {}): Promise<string> {
     const t = this.task(taskId);
     await this.stop(taskId);
     let note = 'Task removed.';
-    if (t.worktree) {
+    if (t.worktree && !options.keepFiles) {
       const r = await this.worktrees.removeIfClean(t.worktree);
       note = r.removed ? 'Task removed; its clean worktree was deleted.' : `Task removed; worktree kept at ${t.worktree.path} because ${r.reason}.`;
     }
@@ -1903,6 +1923,7 @@ export class Workspace {
       task.updatedAt = now();
       // Everything sent here comes from the user (typed, spoken, the main agent on their behalf).
       this.touched(task);
+      task.archivedAt = undefined; // Sending is an explicit continuation; viewing history is not.
       // Started without saying what for: this first message is what the task is, and what its label describes.
       if (!task.title.trim() && delivery !== 'steer') {
         task.title = clip(about.replace(/\s+/g, ' ').trim(), 80);
@@ -2726,7 +2747,7 @@ export class Workspace {
       utterance,
       focusedTaskId,
       projects: d.projects.map((p) => ({ projectId: p.projectId, name: p.name })),
-      tasks: d.tasks.map((t) => ({
+      tasks: d.tasks.filter((t) => !t.archivedAt || t.taskId === focusedTaskId).map((t) => ({
         taskId: t.taskId,
         alias: t.alias,
         name: t.name,

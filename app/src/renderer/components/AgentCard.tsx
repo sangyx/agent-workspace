@@ -1,3 +1,4 @@
+import { useConversationActions } from './ConversationActions';
 import { useRef, useState } from 'react';
 import type { AttentionItem, Project, Task, TranscriptItem } from '../../shared/types';
 import { call, errorText } from '../api';
@@ -53,6 +54,7 @@ export function AgentCard({
   const [subOpen, setSubOpen] = useState(false);
   const [error, setError] = useState('');
   const menu = useContextMenu();
+  const conversations = useConversationActions();
   const [renaming, setRenaming] = useState<AgentField | null>(null);
   const [sending, setSending] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -91,7 +93,7 @@ export function AgentCard({
       onClick={(e) => !isControl(e.target) && onSelect()}
       onDoubleClick={(e) => !isControl(e.target) && onOpen()}
     >
-      <header className="tile-head" onContextMenu={(e) => renaming || menu.open(menuAt(e, agentMenuItems(task, { onRename: setRenaming, setAside: true, onOpen })))}>
+      <header className="tile-head" onContextMenu={(e) => renaming || menu.open(menuAt(e, agentMenuItems(task, { onRename: setRenaming, setAside: true, onArchive: conversations.archive, onDelete: conversations.remove, onOpen })))}>
         <Alias alias={task.alias} size="md" />
         <div className="tile-ident">
           <div className="tile-name">
@@ -111,6 +113,7 @@ export function AgentCard({
           <Icon name="expand" />
         </button>
         {menu.element}
+      {conversations.element}
       </header>
       <div className="tile-meta mono">
         <span className="truncate" title={task.host ? `${task.host}:${task.cwd}` : task.cwd}>

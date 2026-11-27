@@ -400,6 +400,8 @@ export function createElectronWorkspaceHost(
     "task:setPermissionMode": (i: { taskId: string; mode: PermissionMode }) =>
       workspace.setPermissionMode(i.taskId, i.mode),
     "task:remove": (i: { taskId: string }) => workspace.remove(i.taskId),
+    "task:deleteConversation": (i: { taskId: string }) => workspace.deleteConversation(i.taskId),
+    "task:archive": (i: { taskId: string; on: boolean }) => workspace.archiveConversation(i.taskId, i.on),
     "sessions:discover": (i: { projectId: string; provider: NativeProvider }) =>
       workspace.discoverSessions(i.projectId, i.provider),
     "sessions:discoverAll": () => workspace.discoverAllSessions(),
