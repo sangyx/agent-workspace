@@ -7724,3 +7724,16 @@ button.subtask-row:hover {
 .question-reply-original { margin-top: 12px; font-size: 12px; color: var(--text-3); }
 .question-reply-original summary { cursor: pointer; }
 .question-reply-original pre { max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Project identity is a stationary glyph; only the disclosure arrow rotates. */
+.sidebar .project-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  color: var(--text-2);
+}
+.sidebar .project-glyph .icon { flex: none; }
+.sidebar .team-head:is(:hover, :focus-visible) .project-glyph { color: var(--text); }

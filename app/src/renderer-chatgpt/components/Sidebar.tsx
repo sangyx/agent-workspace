@@ -141,8 +141,8 @@ export function Sidebar({
             <div key={team.project.projectId} className={`team${open_ ? ' open' : ''}`} data-testid="team" data-project={team.project.name}>
               {editingProject(team.project.projectId) ? (
                 <div className="team-head editing" data-testid="team-head">
-                  <span className="team-chevron" aria-hidden>
-                    <Icon name={team.project.kind==='research' ? 'research-folder' : 'folder'} size={16} />
+                  <span className="project-glyph" aria-hidden>
+                    <Icon name={team.project.kind==='research' ? 'research-folder' : 'folder'} size={18} />
                   </span>
                   {projectNameEdit(team)}
                 </div>
@@ -156,8 +156,8 @@ export function Sidebar({
                   const m = menuKey(e, () => projectItems(team.project.projectId));
                   if (m) menu.open(m);
                 }} aria-expanded={open_} data-testid="team-head">
-                <span className="team-chevron" aria-hidden>
-                  <Icon name={team.project.kind==='research' ? 'research-folder' : 'folder'} size={16} />
+                <span className="project-glyph" aria-hidden>
+                  <Icon name={team.project.kind==='research' ? 'research-folder' : 'folder'} size={18} />
                 </span>
                 <span className="team-name truncate">{team.project.name}</span>
               </button>

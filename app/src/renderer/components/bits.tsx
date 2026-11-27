@@ -1,3 +1,4 @@
+import { WORKSPACE_ICONS, WORKSPACE_ICON_STROKE } from '../../../../packages/embedded-chat/src/icons';
 import { useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { AgentProvider, AgentStatus, AttentionKind, SubtaskInfo } from '../../shared/types';
@@ -159,8 +160,6 @@ const ICONS = {
   power: 'M12 3v8 M6.3 6.3a8 8 0 1 0 11.4 0',
   branch: 'M6 3v12 M18 9a3 3 0 1 0 0-.01 M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z M18 9a9 9 0 0 1-9 9',
   subtasks: 'M6 4v14a2 2 0 0 0 2 2h10 M6 11h12 M14 7l4 4-4 4',
-  'research-folder': 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z M7 10h3v3H7z M13 14h3v2h-3z M10 12h4v2',
-  folder: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z',
   check: 'M5 12l5 5 9-10',
   x: 'M6 6l12 12 M18 6L6 18',
   spark: 'M12 3v4 M12 17v4 M3 12h4 M17 12h4 M6 6l2.5 2.5 M15.5 15.5 18 18 M6 18l2.5-2.5 M15.5 8.5 18 6',
@@ -177,7 +176,6 @@ const ICONS = {
   archive: 'M3 4h18v4H3z M5 8v12h14V8 M9 12h6',
   trash: 'M4 7h16 M9 7V4h6v3 M6 7l1 13h10l1-13',
   list: 'M9 6h11 M9 12h11 M9 18h11 M4 6h.01 M4 12h.01 M4 18h.01',
-  gear: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z',
   external: 'M14 4h6v6 M20 4l-9 9 M18 14v6H4V6h6',
   refresh: 'M20 12a8 8 0 1 1-2.3-5.7 M20 4v5h-5',
   tool: 'M14 6a4 4 0 0 0 5 5l-9 9a2 2 0 0 1-3-3l9-9a4 4 0 0 0-2-2Z',
@@ -188,13 +186,15 @@ const ICONS = {
   shield: 'M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6z',
   btw: 'M4 5h16v11H9l-5 4z M8 9h8 M8 12h5',
   image: 'M4 5h16v14H4z M4 16l5-5 4 4 3-3 4 4 M15 9h.01',
+  ...WORKSPACE_ICONS,
+  gear: WORKSPACE_ICONS.settings,
 } as const;
 
 export type IconName = keyof typeof ICONS;
 
 export function Icon({ name, size = 14 }: { name: IconName; size?: number }) {
   return (
-    <svg className="icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg className="icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={WORKSPACE_ICON_STROKE} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d={ICONS[name]} />
     </svg>
   );

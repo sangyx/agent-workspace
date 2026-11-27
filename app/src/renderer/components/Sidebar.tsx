@@ -119,6 +119,7 @@ export function Sidebar({
                   <span className="team-chevron" aria-hidden>
                     <Icon name="chevron" size={12} />
                   </span>
+                  <span className="project-glyph" aria-hidden><Icon name={team.project.kind === 'research' ? 'research-folder' : 'folder'} size={18} /></span>
                   {projectNameEdit(team)}
                 </div>
               ) : (
@@ -133,6 +134,7 @@ export function Sidebar({
                 <span className="team-chevron" aria-hidden>
                   <Icon name="chevron" size={12} />
                 </span>
+                <span className="project-glyph" aria-hidden><Icon name={team.project.kind === 'research' ? 'research-folder' : 'folder'} size={18} /></span>
                 <span className="team-name truncate">{team.project.name}</span>
                 <span className="team-counts">
                   {team.counts.waiting ? <span className="team-count needs" title={tr('{n} need you', { n: team.counts.waiting })}>⚑ {team.counts.waiting}</span> : null}

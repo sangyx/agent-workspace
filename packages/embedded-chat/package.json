@@ -14,7 +14,8 @@
     "./runtime": "./runtime/host-runtime.mjs",
     "./gemini": "./runtime/gemini-acp.mjs",
     "./imports": "./src/chatImportPresentation.ts",
-    "./foundation.css": "./src/foundation.css"
+    "./foundation.css": "./src/foundation.css",
+    "./icons": "./src/icons.ts"
   },
   "peerDependencies": {
     "react": ">=18 <20",
