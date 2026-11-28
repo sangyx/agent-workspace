@@ -131,6 +131,15 @@ export interface ConversationDetail extends ConversationSummary {
   usage?: Record<string, unknown>;
   error?: string;
   retryText?: string;
+  /** Slash commands the native CLI reported for this session. */
+  commands?: ComposerCommand[];
+}
+/** One entry of the composer's "/" menu; the CLI runs it when the message is sent. */
+export interface ComposerCommand {
+  /** Without the leading "/". */
+  name: string;
+  description?: string;
+  hint?: string;
 }
 export interface UsageWindow {
   key: string;

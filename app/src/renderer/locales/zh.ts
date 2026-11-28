@@ -1,6 +1,7 @@
 // Simplified Chinese UI strings, keyed by the English text used at the call site.
 // Provider names (Claude Code, Codex), agent names and agent output stay as-is.
 export const zh: Record<string, string> = {
+  Commands: '命令',
   'The session joins this project and keeps its original working folder and machine.': '对话将加入此项目，并保留原来的工作目录和运行机器。',
   'Import conversation…': '引入对话…',
   'Rewind to this message': '回到这条消息',

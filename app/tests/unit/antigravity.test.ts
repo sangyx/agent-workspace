@@ -129,7 +129,8 @@ require(${JSON.stringify(executable)});
       expect(commands).toContain('exec agy acp --sandbox');
       expect(commands).not.toContain('dangerously-skip-permissions');
       expect(vi.mocked(detachedSpawn)).toHaveBeenCalled();
-      expect(vi.mocked(detachedSpawn).mock.calls.at(-1)?.[1]).toContain('cd --');
+      // Physical cd: a symlinked project folder must not leave agy a logical $PWD (edits would ask in Auto).
+      expect(vi.mocked(detachedSpawn).mock.calls.at(-1)?.[1]).toContain('cd -P --');
     }
   } finally {
     await session.close();

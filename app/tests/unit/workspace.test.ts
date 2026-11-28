@@ -282,6 +282,25 @@ describe('scoped memory', () => {
     expect(injected(later.taskId)).toEqual([g.id]);
   });
 
+  it('a slash command is sent alone; a pending memory update waits for the next ordinary message', async () => {
+    const ws = open();
+    const p = await ws.addProject(repo(), 'shop');
+    const t = await ws.createTask({ projectId: p.projectId, provider: 'mock', title: 'api', isolate: false, instruction: 'go' });
+    const replies = () => ws.transcript(t.taskId).filter((i) => i.role === 'assistant').map((i) => i.text);
+    const idle = () => ws.snapshot().tasks.find((x) => x.taskId === t.taskId)!.status !== 'running';
+    await until(() => replies().length === 1 && idle());
+    ws.addMemory({ scope: 'project', scopeId: p.projectId, body: 'Always run integration tests', approvedForReuse: true, source: 'test' });
+
+    expect((await ws.send(t.taskId, '/compact keep the API notes', 'text')).ok).toBe(true);
+    await until(() => replies().length === 2 && idle());
+    expect(replies()[1]).not.toMatch(/Memory update received/);
+    expect(ws.transcript(t.taskId).some((i) => i.role === 'system' && /Memory sent/.test(i.text))).toBe(false);
+
+    expect((await ws.send(t.taskId, 'now continue', 'text')).ok).toBe(true);
+    await until(() => replies().length === 3 && idle());
+    expect(replies()[2]).toMatch(/Memory update received: .*Always run integration tests/);
+  });
+
   it('voice "remember … for this project" saves to the focused project scope', async () => {
     const { ws, A, project } = await demo(open());
     const r = await ws.dispatch('记住：这个项目总是先跑集成测试', { kind: 'coordinator' }, A.taskId);

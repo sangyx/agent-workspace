@@ -32,6 +32,50 @@
 .prompt-composer > textarea::placeholder {
   color: var(--muted);
 }
+/* The "/" menu opens above the composer, like the CLIs' own command pickers. */
+.prompt-composer .composer-commands {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: calc(100% + 6px);
+  z-index: 20;
+  max-height: 264px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px #0000001f;
+}
+.prompt-composer .composer-commands li {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  min-width: 0;
+}
+.prompt-composer .composer-commands li.active {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.prompt-composer .composer-command-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.86rem;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.prompt-composer .composer-command-hint,
+.prompt-composer .composer-command-description {
+  color: var(--muted);
+}
+.prompt-composer .composer-command-description {
+  font-size: 0.8rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
 .prompt-composer .prompt-ai-controls {
   display: contents;
 }

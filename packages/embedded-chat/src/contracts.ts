@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode, RefObject } from "react";
-import type { ChatProject, ConversationSummary } from "./workspaceChat";
+import type { ChatProject, ComposerCommand, ConversationSummary } from "./workspaceChat";
 export type ReasoningEffort =
   "default" | "low" | "medium" | "high" | "xhigh" | "max";
 export interface DirectoryTarget {
@@ -71,6 +71,8 @@ export interface ComposerProps {
   onSideChat?: (text: string) => void;
   sideChatDisabled?: boolean;
   sideChatHint?: string;
+  /** Entries for the "/" menu shown while the message starts with "/". */
+  commands?: ComposerCommand[];
 }
 export interface AIControlsProps {
   pid?: string;

@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { accessSync, constants, existsSync, mkdirSync, statSync } from 'node:fs';
+import { accessSync, constants, existsSync, mkdirSync, realpathSync, statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
@@ -8,6 +8,7 @@ import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
 import { acpCommandEnv, type AcpAgentSpec } from '../../shared/acp-agents';
 import type { AgentProvider, AttentionQuestion, ForkPoint, ModelOption, PermissionKind, NativeSessionInfo, PermissionMode, ProviderCapabilities } from '../../shared/types';
+import { isSlashCommand, slashCommands } from '../../shared/types';
 import { transientKind } from '../retry';
 import { detachedSpawn, type RemoteRunner } from '../util/detached';
 import { childEnv, findExecutable, needsShell, run } from '../util/exec';
@@ -356,7 +357,7 @@ export class AcpAdapter implements ProviderAdapter {
       const argv = (override ?? [this.spec.command, ...this.spec.args]).map(shq).join(' ');
       // (The host's own value of a merged variable is not known here: ours, as given.)
       const env = Object.entries(this.agentEnv({}, extraEnv)).map(([k, v]) => `export ${k}=${shq(v)}; `).join('');
-      const command = `${this.remotePath()}; ${env}cd ${cwd === '~' ? '' : shq(cwd)} 2>/dev/null; exec ${argv}`;
+      const command = `${this.remotePath()}; ${env}cd -P -- ${cwd === '~' ? '' : shq(cwd)} 2>/dev/null && exec ${argv}`;
       const proc = detachedSpawn(this.runner(host), command, { backoff: this.opts.backoff, giveUpMs: this.opts.giveUpMs, onLink: (s) => console.warn(`[ssh] ${host}: connection ${s}`) });
       return new AcpConnection(proc, this.spec.label, host);
     }
@@ -710,6 +711,17 @@ class AcpSession implements ProviderSession {
   }
 
   async start(): Promise<void> {
+    // Antigravity evaluates edits against its physical workspace root. Keep the task's
+    // configured alias intact, while using the same real path for its process and ACP session.
+    if (this.provider === 'antigravity') {
+      let cwd: string;
+      if (this.args.host) {
+        const r = await this.adapter.runner(this.args.host).run(`cd -P -- ${this.args.cwd === '~' ? '"$HOME"' : shq(this.args.cwd)} && pwd -P`, 20_000);
+        cwd = r.stdout.trim();
+        if (r.code || !cwd.startsWith('/')) throw new Error('Could not resolve the Antigravity project folder on its host.');
+      } else cwd = realpathSync(this.args.cwd);
+      this.args = { ...this.args, cwd };
+    }
     // The workspace skills, through the CLI's own configuration (acp-native.ts).
     const native = acpNative(this.adapter.spec, this.args.skills, this.adapter.versions.get(this.args.host ?? ''));
     const conn = this.adapter.spawn(this.args.cwd, this.args.host, native.env);
@@ -929,8 +941,11 @@ class AcpSession implements ProviderSession {
     this.startWatch();
     const said = blocks.filter((b) => b.type === 'text').map((b) => str(b.text)).join('\n').trim();
     if (said) this.said.push({ role: 'user', text: said });
-    const prompt = this.instructionsDue ? [{ type: 'text', text: `<system-reminder>\n${this.instructionsDue}\n</system-reminder>` }, ...blocks] : blocks;
-    this.instructionsDue = undefined;
+    // A slash command must be the whole prompt for the agent to run it; first-prompt instructions wait.
+    const slash = blocks.length === 1 && blocks[0].type === 'text' && isSlashCommand(str(blocks[0].text));
+    const due = slash ? undefined : this.instructionsDue;
+    const prompt = due ? [{ type: 'text', text: `<system-reminder>\n${due}\n</system-reminder>` }, ...blocks] : blocks;
+    if (due) this.instructionsDue = undefined;
     const request = async () => { await this.applyReasoningEffort(); return conn.rpc('session/prompt', { sessionId: this.sessionId, prompt }, 0); };
     request().then(
       (r) => this.finishTurn(rec(r)),
@@ -1281,6 +1296,7 @@ class AcpSession implements ProviderSession {
       case 'available_commands_update':
         this.adapter.commands.set(this.args.host ?? '', new Set(arr(u.availableCommands).map(rec).map(command => str(command.name).replace(/^\//, ''))));
         if (this.sessionId) this.refreshLimits();
+        if (!this.replaying) this.emit({ type: 'commands', commands: slashCommands(arr(u.availableCommands).map(rec).map((c) => ({ name: c.name, description: c.description, hint: rec(c.input).hint }))) });
         return;
       case 'agent_message_chunk':
         return this.chunk('assistant', u);

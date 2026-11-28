@@ -1,0 +1,8 @@
+.native-command-menu {
+  list-style: none; margin: 0 0 8px; padding: 5px; max-height: 240px; overflow-y: auto;
+  border: 1px solid var(--border); border-radius: 12px; background: var(--panel, var(--bg));
+  text-align: left; box-shadow: 0 6px 20px #0000000d;
+}
+.native-command-menu li { display: flex; flex-direction: column; gap: 3px; padding: 9px 12px; border-radius: 7px; cursor: pointer; overflow-wrap: anywhere; }
+.native-command-menu li[aria-selected="true"] { background: var(--hover); }
+.native-command-menu small { color: var(--muted); font-size: .9em; }

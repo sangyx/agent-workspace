@@ -1,3 +1,4 @@
+import { useSlashCommands } from '../../renderer/components/SlashCommands';
 import { QuestionReplyMessage } from '../../renderer/QuestionReplyMessage';
 import { useHistoryRefresh } from '../../renderer/state';
 import {presentTranscriptItem} from '../../shared/presentation';
@@ -1259,6 +1260,7 @@ function Composer({
   // @ lists the files in the agent's folder (the main agent has none: only @~/ and @/ browse there).
   const mention = useMentions(task.taskId, box, draft, setDraft, { browseOnly: isMainAgent(task), isAgent });
   // Other files dropped here are mentioned with @, as if picked from the list.
+  const slash = useSlashCommands(task.commands, draft, setDraft, box, !!onBtw, voice !== null);
   const attach = useAttachments(async (files) => {
     const text = await dropMentions(task.taskId, files);
     if (text) mention.insert(text);
@@ -1336,6 +1338,7 @@ function Composer({
           </button>
         </div>
       ) : null}
+      {slash.menu}
       <MentionMenu m={mention} />
       <div
         className={`composer-box${shell ? ' shell-mode' : ''}${suggestion ? ' has-suggestion' : ''}${voice !== null ? ' voice-live' : ''}${attach.dragging ? ' dropping' : ''}`}
@@ -1359,9 +1362,11 @@ function Composer({
           }}
           data-testid="composer-input"
           data-suggestion={suggestion || undefined}
+          {...slash.aria}
           onPaste={attach.onPaste}
           onSelect={mention.update}
           onKeyDown={(e) => {
+            if (slash.onKeyDown(e)) return;
             if (mention.onKeyDown(e) || mention.onBackspace(e)) return;
             // → or Tab takes the suggested reply into the box (edit it, or Enter to send).
             if (suggestion && (e.key === 'ArrowRight' || e.key === 'Tab') && !e.shiftKey && !e.metaKey && !e.altKey && !e.ctrlKey) {

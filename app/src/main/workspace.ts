@@ -34,7 +34,7 @@ import type { ModelOption,
   TranscriptItem,
   TransientKind,
   WorkspaceSnapshot, BtwEntry, ImageRef, AgentStatus, TaskUsage, ProviderLimits, LimitWindow } from '../shared/types';
-import { accountKey, NATIVE_PROVIDERS } from '../shared/types';
+import { accountKey, isSlashCommand, NATIVE_PROVIDERS } from '../shared/types';
 import { CODING_PROVIDERS, type CodingProvider } from '../shared/types';
 import { acpAgent, isAcpProvider } from '../shared/acp-agents';
 import { clipOutput } from '../shared/content';
@@ -2035,10 +2035,13 @@ export class Workspace {
       if (busy && live.session.canSteer === false && !opts.interrupt) {
         return { ok: false, taskId, error: 'Wait for the current turn to finish or use Stop & send.' };
       }
+      // A slash command ("/goal …") must reach the CLI as the whole message, or it is read as plain text:
+      // memory updates, `!` output, hand-overs and carried history wait for the next ordinary message.
+      const slash = isSlashCommand(text) && !images && task !== this.store.data.mainAgent;
       // Memory saved, changed or removed since the session was given its notes reaches it with this message.
       const given = this.memoryGiven(task);
       const delta = memoryDelta(given, task.memorySeen ?? seenOf(given.filter((m) => task.injectedMemoryIds?.includes(m.id))));
-      const update = deltaSize(delta) ? memoryUpdateText(delta) : '';
+      const update = !slash && deltaSize(delta) ? memoryUpdateText(delta) : '';
       if (update) this.appendSystem(taskId, `Memory sent with this message: ${deltaSize(delta)}`, { memoryUpdate: [...delta.added.map((m) => m.body), ...delta.changed.map((m) => m.body), ...delta.removed.map((b) => `✕ ${b}`)] });
       const item: TranscriptItem = { id: `u-${randomUUID()}`, taskId, role: 'user', text, ...(images ? { images } : {}), via, createdAt: now(), ...(busy ? { delivery: opts.interrupt ? 'interrupt' : 'steer' } : {}) };
       this.upsertTranscript(taskId, item);
@@ -2047,22 +2050,21 @@ export class Workspace {
       // Not on every turn start: Claude Code starts turns of its own to report background sub-agents.
       if (!busy && task.subtasks) task.subtasks = task.subtasks.filter((s) => s.status === 'running').length ? task.subtasks.filter((s) => s.status === 'running') : undefined;
       // Commands the user ran with `!` since the last message reach the agent with this one.
-      const ran = this.shellOutput.get(taskId) ?? [];
+      const ran = slash ? [] : this.shellOutput.get(taskId) ?? [];
       // The first message of a new chapter carries the hand-over (what is going on now) to the fresh session;
       // then any memory update, the commands run with `!`, and the message itself.
       const handover = task === this.store.data.mainAgent ? this.pendingHandover : undefined;
       this.pendingHandover = task === this.store.data.mainAgent ? undefined : this.pendingHandover;
-      const openNote = this.openRequestNote(task, opts.openRequest);
+      const openNote = slash ? undefined : this.openRequestNote(task, opts.openRequest);
       // An agent continuing a conversation from another CLI gets it with its first message.
-      const carried = this.store.data.carried?.[taskId];
-      // An agent mentioned by name (@结账页方案, dropped from the sidebar) reaches the CLI as the file its
-      // conversation is in, to read; the conversation here keeps the short name.
-      const message = [handover, update, ...ran, openNote, await this.expandAgentMentions(task, text)].filter(Boolean).join('\n\n');
+      const carried = slash ? undefined : this.store.data.carried?.[taskId];
+      // Keep commands standalone; expand agent references only for ordinary messages.
+      const message = slash ? text.trim() : [handover, update, ...ran, openNote, await this.expandAgentMentions(task, text)].filter(Boolean).join('\n\n');
       const delivery = await live.session.send(carried ? conversationCopy(carried, `${CARRY_NOTE}\n\n${message}`) : message, {
         interrupt: opts.interrupt,
         ...(images ? { images: images.map((r) => ({ path: this.attachments.path(r.id), mediaType: r.mediaType })) } : {}),
       });
-      this.shellOutput.delete(taskId);
+      if (!slash) this.shellOutput.delete(taskId);
       if (carried) delete this.store.data.carried![taskId];
       if (update) {
         task.memorySeen = seenOf(given);
@@ -2464,6 +2466,9 @@ export class Workspace {
       case 'model':
         task.activeModel = event.model;
         break;
+      case 'commands':
+        task.commands = event.commands.length ? event.commands : undefined;
+        return this.changedThrottled();
       case 'suggestion':
         task.suggestion = clip(event.text, 500);
         break;

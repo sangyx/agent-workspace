@@ -18,6 +18,7 @@ import type {
   TransientKind,
   UsageTokens,
   LimitWindow,
+  SlashCommand,
 } from '../../shared/types';
 import type { WorkspaceTool } from '../main-agent';
 
@@ -98,6 +99,8 @@ export type ProviderEvent =
   | { type: 'suggestion'; text: string }
   /** The model the session runs on (at start, and after a switch). */
   | { type: 'model'; model: string }
+  /** The slash commands the CLI accepts in this session (replaces any earlier list). */
+  | { type: 'commands'; commands: SlashCommand[] }
   /** Tokens used since the last usage event (to add), and/or the context now; history replay never sends it. */
   | { type: 'usage'; add?: Partial<UsageTokens> & { costUsd?: number }; context?: number; contextWindow?: number }
   /** The account's usage limits (rate-limit windows), as just reported. */
