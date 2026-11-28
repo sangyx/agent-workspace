@@ -30,7 +30,9 @@ function openClient(executable: string, cwd: string | undefined, handlers?: {
   update: (notification: SessionNotification) => void;
   permission: (request: RequestPermissionRequest, signal: AbortSignal) => Promise<RequestPermissionResponse>;
 }, host?: string, durable = false) {
-  const command = `cd -- ${cwd ? shq(cwd) : '"$HOME"'} && exec agy acp --sandbox`;
+  // `cd -P`: agy takes its workspace root from $PWD, and a logical $PWD through a symlinked folder
+  // makes every edit's real path look outside the workspace, so Auto and Accept edits still ask.
+  const command = `cd -P -- ${cwd ? shq(cwd) : '"$HOME"'} && exec agy acp --sandbox`;
   const child = host
     ? durable ? detachedSpawn(sshRunner(host), command) : sshSpawn(host, command)
     : spawn(executable, ['acp', '--sandbox'], { cwd, env: childEnv(), stdio: ['pipe', 'pipe', 'ignore'] });
