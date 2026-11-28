@@ -36,13 +36,35 @@ import { resolvePosix } from '../../shared/preview';
 import { t, language } from '../i18n';
 import { OpenInApp } from './OpenInApp';
 import { AttachButton, AttachmentStrip, MessageImages, useAttachments } from './Attachments';
-import { dropMentions, MentionHighlight, MentionMenu, useMentions } from './Mentions';
+import { findAgentIn } from '../../shared/agent-ref';
+import { agentMention, dropMentions, MentionHighlight, MentionMenu, useMentions } from './Mentions';
 import { savedPreview, savePreview, type PreviewState } from '../preview-store';
 import { useDraft, setDraftText, setDraftImages } from '../drafts';
 import { RewindButton, RewindDialog } from '../../renderer/components/Rewind';
 
 export function FocusView({ snapshot, task, transcript, now, onOpen }: { snapshot: WorkspaceSnapshot; task: Task; transcript: TranscriptItem[]; now: number; onOpen?: (taskId: string) => void }) {
   const directoryWarning = warningText(task.sharedCwdWarning || '');
+  /** An @name that is another agent (dropped from the sidebar), and that agent's name as shown. */
+  const isAgentRef = (ref: string) => !!findAgentIn(snapshot.tasks, ref);
+  const agentNamed = (ref: string) => {
+    const other = findAgentIn(snapshot.tasks, ref);
+    return other ? displayName(other) : undefined;
+  };
+  /** Opens the agent a chip names: by name (@结账页方案), or by the session file its conversation is in. */
+  const openAgent = (refOrPath: string) => {
+    const other = findAgentIn(snapshot.tasks, refOrPath) ?? sessionOwner(refOrPath);
+    if (other) onOpen?.(other.taskId);
+  };
+  /** A mentioned file that holds another agent's conversation (its CLI's session file): that agent's name. */
+  const sessionOwner = (path: string) => {
+    const id = /([A-Za-z0-9-]{8,80})\.jsonl$/.exec(path)?.[1];
+    const session = id ? snapshot.sessions.find((s) => s.nativeSessionId && id.endsWith(s.nativeSessionId)) : undefined;
+    return session ? snapshot.tasks.find((t) => t.taskId === session.taskId) : undefined;
+  };
+  const agentFor = (path: string) => {
+    const other = sessionOwner(path);
+    return other ? displayName(other) : undefined;
+  };
   // Completion reports duplicate the last transcript message here; only show what needs a decision.
   const open = snapshot.attention.filter((a) => a.taskId === task.taskId && a.state === 'open' && a.kind !== 'completion');
   // A question the agent asked in its own words is its message right above: only the newest
@@ -186,6 +208,7 @@ export function FocusView({ snapshot, task, transcript, now, onOpen }: { snapsho
     jumpedAt.current = Date.now();
     setCurrentTask(mapTasks.find((x) => x.turnIds.includes(turnId))?.startItemId ?? null);
     const el = threadRef.current?.querySelector<HTMLElement>(`.msg.user[data-item-id="${turnId}"]`);
+    window.dispatchEvent(new Event('amw:transcript-leave-end'));
     el?.scrollIntoView({ block: 'start', behavior: 'smooth' });
   };
   /**
@@ -537,7 +560,7 @@ export function FocusView({ snapshot, task, transcript, now, onOpen }: { snapsho
                 <SessionMiniMap tasks={mapTasks} current={currentTask} onOpen={() => { setShowMap(true); setPreview(null); setShowBtw(false); }} />
               )
             ) : null}
-            <PreviewContext.Provider value={{ preview: setPreview, openExternal }}>
+            <PreviewContext.Provider value={{ preview: setPreview, openExternal, agentFor, agentNamed, openAgent }}>
               <Transcript items={transcript} main={isMainAgent(task)} task={task} snapshot={snapshot} onOpen={onOpen} />
             </PreviewContext.Provider>
             {/* Requests wait at the end of the conversation, where the agent asked, above the reply box. */}
@@ -559,6 +582,7 @@ export function FocusView({ snapshot, task, transcript, now, onOpen }: { snapsho
             <Composer
               key={task.taskId}
               task={task}
+              isAgent={isAgentRef}
               onBtw={isMainAgent(task) || snapshot.capabilities.find((c) => c.provider === task.provider)?.sideQuestions === false ? undefined : askBtw}
               btwCount={btw.length}
               inject={inject}
@@ -917,10 +941,28 @@ const Transcript = memo(function Transcript({ items, main, task, snapshot, onOpe
     const el = ref.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [task.taskId]);
+  // A message the user just sent: back to the end, following what the agent does with it.
+  const lastSent = [...items].reverse().find((i) => i.role === 'user' && i.via !== 'main')?.id;
+  const seenSent = useRef(lastSent);
   useLayoutEffect(() => {
     const el = ref.current;
+    if (lastSent !== seenSent.current) {
+      seenSent.current = lastSent;
+      stick.current = true;
+    }
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [items]);
+  // Only the reader scrolling up leaves the end: a wheel, a touch, the scrollbar or a key, just before
+  // the scroll. Scrolls the view makes itself (keeping to the end while content grows, code
+  // highlighted a moment later) never do, however far they move.
+  const userScrolledAt = useRef(0);
+  const byUser = () => (userScrolledAt.current = Date.now());
+  // A jump elsewhere (the session map) is the reader's too.
+  useEffect(() => {
+    const leave = () => (stick.current = false);
+    window.addEventListener('amw:transcript-leave-end', leave);
+    return () => window.removeEventListener('amw:transcript-leave-end', leave);
+  }, []);
   // Also when the size changes (the preview opens or is resized, the window, images loading):
   // a conversation that was at its end stays at its end.
   useEffect(() => {
@@ -1035,9 +1077,15 @@ const Transcript = memo(function Transcript({ items, main, task, snapshot, onOpe
       className="transcript"
       ref={ref}
       data-testid="transcript"
+      onWheel={byUser}
+      onTouchMove={byUser}
+      onPointerDown={byUser}
+      onKeyDown={byUser}
       onScroll={(e) => {
         const el = e.currentTarget;
-        stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+        const atEnd = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+        if (atEnd) stick.current = true;
+        else if (Date.now() - userScrolledAt.current < 800) stick.current = false;
       }}
     >
       <div className="transcript-inner" ref={inner}>
@@ -1130,6 +1178,7 @@ function Composer({
   onClearAbout,
   side,
   under,
+  isAgent,
 }: {
   task: Task;
   /** Beside the box, outside it on the right, level with its bottom (the context used). */
@@ -1142,6 +1191,8 @@ function Composer({
   /** The request the message is likely about (unfolded above): sent along as a hint, shown here. */
   about?: { id: string; alias: string; headline: string };
   onClearAbout?: () => void;
+  /** Whether an @name in the box is another agent (dropped from the sidebar): marked like a file. */
+  isAgent?: (ref: string) => boolean;
 }) {
   // The unsent message is the agent's, not the box's: it is still there after the Overview or another
   // agent, and the agent's Overview tile shows the same text.
@@ -1206,13 +1257,17 @@ function Composer({
   const [sending, setSending] = useState(false);
   // Images pasted, dropped or picked go with the next message (the main agent passes them on when the work is about them).
   // @ lists the files in the agent's folder (the main agent has none: only @~/ and @/ browse there).
-  const mention = useMentions(task.taskId, box, draft, setDraft, { browseOnly: isMainAgent(task) });
+  const mention = useMentions(task.taskId, box, draft, setDraft, { browseOnly: isMainAgent(task), isAgent });
   // Other files dropped here are mentioned with @, as if picked from the list.
   const attach = useAttachments(async (files) => {
     const text = await dropMentions(task.taskId, files);
     if (text) mention.insert(text);
     box.current?.focus();
-  }, task.taskId);
+  }, task.taskId, async (other) => {
+    // Another agent dragged from the sidebar: the file its conversation is in, for this agent to read.
+    mention.insert(await agentMention(task.taskId, other));
+    box.current?.focus();
+  });
   // While the agent works, Enter adds to what it is doing (read at its next step);
   // ⌘Enter stops the current turn and starts over with this message.
   const working = task.status === 'running' || task.status === 'starting';
@@ -1289,7 +1344,7 @@ function Composer({
       >
         <AttachmentStrip items={attach.items} busy={attach.busy} onRemove={attach.remove} />
         <div className="composer-field">
-        <MentionHighlight text={draft} box={box} />
+        <MentionHighlight text={draft} box={box} isAgent={isAgent} />
         <textarea
           ref={box}
           className="composer-input"

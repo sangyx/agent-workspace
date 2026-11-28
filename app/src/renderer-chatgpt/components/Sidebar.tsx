@@ -3,6 +3,7 @@ import { ArchivedConversations } from '../../renderer/components/ArchivedConvers
 import { useConversationActions } from '../../renderer/components/ConversationActions';
 import { ProjectConversationActions, projectConversationItems } from '../../renderer/components/ProjectConversationActions';
 import { useState, type MouseEvent } from 'react';
+import { AGENT_DRAG } from './Attachments';
 import { needsYou, recentConversations, type Team } from '../../shared/agent-order';
 import type { Task, WorkspaceSnapshot } from '../../shared/types';
 import { displayName, Icon, liveSubtasks, PROVIDER_LABEL, STATUS_LABEL, SubtaskDots, SubtaskThread } from './bits';
@@ -261,6 +262,11 @@ export function Sidebar({
             e.preventDefault();
             setEditing({ taskId: t.taskId, field: 'name', needs: !!opts.needs });
           }
+        }}
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData(AGENT_DRAG, t.taskId);
+          e.dataTransfer.effectAllowed = 'copy';
         }}
         data-testid={opts.needs ? 'needs-item' : 'rail-item'}
         data-alias={t.alias}

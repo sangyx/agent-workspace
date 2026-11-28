@@ -3,6 +3,7 @@ import { useConversationActions } from './ConversationActions';
 import { ProjectConversationActions, projectConversationItems } from '../../renderer/components/ProjectConversationActions';
 import { useState, type MouseEvent } from 'react';
 import { needsYou, recentConversations, visibleOrder, type Team } from '../../shared/agent-order';
+import { AGENT_DRAG } from './Attachments';
 import type { Task, WorkspaceSnapshot } from '../../shared/types';
 import { Alias, displayName, Icon, Kbd, liveSubtasks, PROVIDER_LABEL, STATUS_LABEL, SubtaskDots, SubtaskThread } from './bits';
 import { AccountLimits } from './SessionUsage';
@@ -249,6 +250,12 @@ export function Sidebar({
         }}
         data-testid={opts.needs ? 'needs-item' : 'rail-item'}
         data-alias={t.alias}
+        // Dragged onto another agent's message box: that agent gets a pointer to this one's conversation.
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData(AGENT_DRAG, t.taskId);
+          e.dataTransfer.effectAllowed = 'copy';
+        }}
         title={`${displayName(t)} · ${PROVIDER_LABEL[t.provider]} · ${tr(STATUS_LABEL[t.status])}${n ? ` (⌘${n})` : ''}`}
       >
         {inner}

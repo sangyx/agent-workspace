@@ -437,6 +437,7 @@ export function createElectronWorkspaceHost(
     // Typing a folder path in the project chooser: its subfolders, here or on a machine.
     "files:search": (i: { taskId: string; query: string }) =>
       workspace.searchFiles(i.taskId, i.query),
+    "files:agent": (i: { taskId: string; otherTaskId: string }) => workspace.agentReference(i.taskId, i.otherTaskId),
     "files:dropped": (i: { taskId: string; paths: string[] }) =>
       workspace.droppedFiles(i.taskId, i.paths),
     "fs:listDirs": (i: { dir: string; host?: string }) =>

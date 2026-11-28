@@ -30,6 +30,7 @@ function renderInterface(style: 'claude' | 'chatgpt' = 'claude') {
 }
 let win: BrowserWindow | null = null;
 let host: ReturnType<typeof createElectronWorkspaceHost> | undefined;
+
 /**
  * Automated tests run the app in the background (AMW_BACKGROUND=1): no window on screen, no Dock icon,
  * never the frontmost app, so a test run does not take the keyboard from whoever is typing. The page
