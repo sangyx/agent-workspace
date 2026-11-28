@@ -14,6 +14,7 @@ import {
   type ChatApproval,
   type WorkspaceMessage,
   type ChatPermissionMode,
+  type ComposerCommand,
 } from "./workspaceChat";
 import {
   memo,
@@ -613,6 +614,30 @@ export function ChatPage({ pid, id }: { pid?: string; id?: string }) {
     pending = !!detail?.attention.some(blocksChatInput),
     selected = settings?.providers.find((p) => p.id === provider),
     changing = !!detail && live && selected?.engine !== detail.provider;
+  // The "/" menu: the CLI's own commands for this session, plus side chat where it works. A command
+  // the CLI reports only after its session starts, so a brand-new conversation lists none yet.
+  const sideChatOk =
+    live && !["gemini", "antigravity"].includes(detail?.provider || "");
+  const composerCommands = useMemo<ComposerCommand[]>(() => {
+    const native =
+      live && !changing
+        ? (detail?.commands || []).filter((c) => c.name !== "btw")
+        : [];
+    return [
+      ...(sideChatOk
+        ? [
+            {
+              name: "btw",
+              hint: tx("question"),
+              description: tx(
+                "Ask a side question without interrupting the agent",
+              ),
+            },
+          ]
+        : []),
+      ...native,
+    ];
+  }, [detail?.commands, live, changing, sideChatOk, tx]);
   const requests = visibleChatRequests(detail?.attention || []);
   const requestIds = requests.map((item) => item.id).join("|");
   useLayoutEffect(() => {
@@ -1137,6 +1162,7 @@ export function ChatPage({ pid, id }: { pid?: string; id?: string }) {
                 <PromptComposer
                   minInputHeight={44}
                   voiceOptions={settings?.voice}
+                  commands={composerCommands}
                   onSideChat={openSideChat}
                   sideChatDisabled={
                     !live ||

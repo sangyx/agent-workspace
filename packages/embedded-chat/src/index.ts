@@ -1,6 +1,7 @@
 export { ChatPage } from "./ChatPage";
 export { ChatHostProvider } from "./host";
 export type { ChatHost, ComposerProps, AIControlsProps } from "./contracts";
+export type { ComposerCommand } from "./workspaceChat";
 export { ChatTaskMap, ChatTaskMiniMap } from "./ChatTaskMap";
 export { ChatContextNote } from "./ChatContextNote";
 export { ChatMarkdown, ChatPreviewContext } from "./ChatMarkdown";

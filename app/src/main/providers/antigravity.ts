@@ -12,6 +12,7 @@ import type {
 } from '@agentclientprotocol/sdk/unstable';
 import { clipOutput, makeDiff, snippetHunks } from '../../shared/content';
 import type { ModelOption, NativeSessionInfo, PermissionMode, ProviderCapabilities, ToolContent, ToolStatus } from '../../shared/types';
+import { isSlashCommand, slashCommands } from '../../shared/types';
 import { transientKind } from '../retry';
 import { childEnv, findExecutable } from '../util/exec';
 import type { ApprovalResponse, Delivery, HistoryImage, ImageInput, ProviderAdapter, ProviderEvent, ProviderSession, StartArgs } from './types';
@@ -335,12 +336,15 @@ class AntigravitySession implements ProviderSession {
     try {
       await this.configure();
       const prompt: ContentBlock[] = [];
-      if (this.inject) prompt.push({ type: 'text', text: `<agent-workspace-context>\n${this.inject}\n</agent-workspace-context>` });
+      // agy runs "/command" only when it is the whole prompt; the context waits for the next message then.
+      const slash = isSlashCommand(text) && !images.length;
+      const inject = slash ? undefined : this.inject;
+      if (inject) prompt.push({ type: 'text', text: `<agent-workspace-context>\n${inject}\n</agent-workspace-context>` });
       if (text) prompt.push({ type: 'text', text });
       for (const image of images) prompt.push({ type: 'image', mimeType: image.mediaType, data: (await readFile(image.path)).toString('base64') });
       if (this.stopping || this.closed) return { type: 'turnCompleted', status: 'interrupted' };
       const response = await this.transport!.rpc.request(agent.session.prompt, { sessionId: this.id!, prompt });
-      this.inject = undefined;
+      if (inject) this.inject = undefined;
       if (response.usage) {
         const tokens = response.usage;
         const totals = {
@@ -471,6 +475,9 @@ class AntigravitySession implements ProviderSession {
         break;
       case 'config_option_update':
         this.catalog = update.configOptions;
+        break;
+      case 'available_commands_update':
+        if (!this.loading) this.emit({ type: 'commands', commands: slashCommands(update.availableCommands.map((c) => ({ name: c.name, description: c.description, hint: c.input && 'hint' in c.input ? c.input.hint : undefined }))) });
         break;
     }
   }

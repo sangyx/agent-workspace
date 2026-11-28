@@ -8,6 +8,7 @@ import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
 import { acpCommandEnv, type AcpAgentSpec } from '../../shared/acp-agents';
 import type { AgentProvider, AttentionQuestion, ForkPoint, ModelOption, PermissionKind, NativeSessionInfo, PermissionMode, ProviderCapabilities } from '../../shared/types';
+import { isSlashCommand, slashCommands } from '../../shared/types';
 import { transientKind } from '../retry';
 import { detachedSpawn, type RemoteRunner } from '../util/detached';
 import { childEnv, findExecutable, needsShell, run } from '../util/exec';
@@ -929,8 +930,11 @@ class AcpSession implements ProviderSession {
     this.startWatch();
     const said = blocks.filter((b) => b.type === 'text').map((b) => str(b.text)).join('\n').trim();
     if (said) this.said.push({ role: 'user', text: said });
-    const prompt = this.instructionsDue ? [{ type: 'text', text: `<system-reminder>\n${this.instructionsDue}\n</system-reminder>` }, ...blocks] : blocks;
-    this.instructionsDue = undefined;
+    // A slash command must be the whole prompt for the agent to run it; first-prompt instructions wait.
+    const slash = blocks.length === 1 && blocks[0].type === 'text' && isSlashCommand(str(blocks[0].text));
+    const due = slash ? undefined : this.instructionsDue;
+    const prompt = due ? [{ type: 'text', text: `<system-reminder>\n${due}\n</system-reminder>` }, ...blocks] : blocks;
+    if (due) this.instructionsDue = undefined;
     const request = async () => { await this.applyReasoningEffort(); return conn.rpc('session/prompt', { sessionId: this.sessionId, prompt }, 0); };
     request().then(
       (r) => this.finishTurn(rec(r)),
@@ -1281,6 +1285,7 @@ class AcpSession implements ProviderSession {
       case 'available_commands_update':
         this.adapter.commands.set(this.args.host ?? '', new Set(arr(u.availableCommands).map(rec).map(command => str(command.name).replace(/^\//, ''))));
         if (this.sessionId) this.refreshLimits();
+        if (!this.replaying) this.emit({ type: 'commands', commands: slashCommands(arr(u.availableCommands).map(rec).map((c) => ({ name: c.name, description: c.description, hint: rec(c.input).hint }))) });
         return;
       case 'agent_message_chunk':
         return this.chunk('assistant', u);

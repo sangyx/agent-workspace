@@ -99,6 +99,8 @@ export interface Task {
   memorySeen?: Record<string, { at: string; body: string }>;
   /** Mock-provider script name; ignored by native providers. */
   mockScript?: string;
+  /** Slash commands the native CLI says this session accepts (latest list it sent); for the composer's "/" menu. */
+  commands?: SlashCommand[];
   /** Overrides settings.permissionMode for this agent. */
   permissionMode?: PermissionMode;
   /** Null selects the model default; unset leaves provider settings alone. */
@@ -583,6 +585,36 @@ export interface LocalModelState {
  * - ask: every action that changes something asks.
  */
 export type PermissionMode = 'auto' | 'edits' | 'ask';
+
+/** A slash command a native CLI accepts as message text ("/name args"); the CLI itself runs it. */
+export interface SlashCommand {
+  /** Without the leading "/". */
+  name: string;
+  description?: string;
+  /** What to type after the command, when the CLI says. */
+  hint?: string;
+}
+
+/** A message the CLI should run as a slash command: "/name" first, then optional arguments. Paths ("/home/…") are not. */
+export function isSlashCommand(text: string): boolean {
+  return /^\/[A-Za-z0-9][\w:.-]*(\s|$)/.test(text.trim());
+}
+
+/** Normalizes a CLI's command list: names without "/", no blanks or duplicates, bounded. */
+export function slashCommands(items: Array<{ name?: unknown; description?: unknown; hint?: unknown }>): SlashCommand[] {
+  const seen = new Set<string>();
+  const out: SlashCommand[] = [];
+  for (const item of items) {
+    const name = typeof item.name === 'string' ? item.name.trim().replace(/^\//, '') : '';
+    if (!name || /\s/.test(name) || seen.has(name) || name.length > 80) continue;
+    seen.add(name);
+    const description = typeof item.description === 'string' && item.description.trim() ? item.description.trim().slice(0, 300) : undefined;
+    const hint = typeof item.hint === 'string' && item.hint.trim() ? item.hint.trim().slice(0, 120) : undefined;
+    out.push({ name, ...(description ? { description } : {}), ...(hint ? { hint } : {}) });
+    if (out.length >= 200) break;
+  }
+  return out;
+}
 
 export interface WorkspaceSnapshot {
   /** Demo entry: mock agents are offered and seeded. */

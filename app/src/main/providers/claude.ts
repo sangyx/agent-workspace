@@ -11,6 +11,7 @@ import type {
   SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 import type { AttentionQuestion, ForkPoint, ModelOption, NativeSessionInfo, PermissionMode, ProviderCapabilities, ReasoningEffort, TransientKind } from '../../shared/types';
+import { slashCommands } from '../../shared/types';
 import { transientKind } from '../retry';
 import { childEnv, findExecutable, run } from '../util/exec';
 import { sshError, sshRun } from '../util/ssh';
@@ -706,6 +707,11 @@ class ClaudeSession implements ProviderSession {
         this.emit({ type: 'sessionStarted', nativeSessionId: id, resumed: !!this.args.resumeNativeSessionId });
       }
       if (str(m.model) && !history) this.emit({ type: 'model', model: str(m.model) });
+      // Names only in init; commands bound to the terminal (exit, statusline…) mean nothing in a chat window.
+      if (!history && Array.isArray(m.slash_commands)) {
+        const terminal = new Set(Array.isArray(m.terminal_slash_commands) ? m.terminal_slash_commands.map(String) : []);
+        this.emit({ type: 'commands', commands: slashCommands(m.slash_commands.map(String).filter((n: string) => !terminal.has(n)).map((name: string) => ({ name }))) });
+      }
       return;
     }
     if (type === 'system' && m.subtype === 'api_retry') {
